@@ -75,4 +75,6 @@ under-budgeted, and sensitive-fallback requests and renders the protected gatewa
 dashboard. Temporary state is removed in `finally`; real keys are neither printed
 nor persisted.
 
-No Phase 06 business-brain behavior is implemented.
+Phase 06 business-brain behavior is documented separately in
+`docs/phase-06-business-brain.md`; it consumes no provider directly and remains
+behind the Phase 05 gateway boundary for future model calls.

@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, and the Phase 05 provider-independent model gateway.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, and the Phase 06 provenance-first business brain.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -80,6 +80,15 @@ Open `/settings/ai` to inspect configured providers, validate their selected mod
 
 The default route is OpenAI, followed by Gemini and Anthropic fallback for explicitly standard-sensitivity requests. Sensitive requests cannot cross providers. Defaults can be changed with the `FOUNDORA_MODEL_*` variables listed in `.env.example`, but model identifiers remain constrained to the code-reviewed registry. Current registry pricing and its review date are documented in `docs/phase-05-model-gateway.md`.
 
+Open `/brain` for the selected business's unified context. The builder exposes an
+explicit purpose, token ceiling, and source selection, then shows every source's
+authority, version, validity, inclusion decision, and integrity fingerprint.
+Completed and cancelled goals cannot enter compiled context, onboarding drafts are
+never treated as approved facts, and future strategy, knowledge, task, customer,
+KPI, decision, and memory sources are shown as unavailable until their phases
+implement them. Phase 06 derives this read-only view without a new database table;
+the schema head remains `20260822_05`.
+
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
 PostgreSQL and Redis bind only to localhost. PostgreSQL uses trust authentication only inside this local Compose network; production must supply independently managed authentication when a deployment phase selects an environment.
@@ -110,4 +119,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business workspaces, onboarding drafts, founder-approved profiles, and model usage are durable PostgreSQL records. Business-brain and later operational domains remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business workspaces, onboarding drafts, founder-approved profiles, and model usage are durable PostgreSQL records. Business-brain context is derived from authoritative selected-business records; agent and later operational domains remain deferred to their authorized phases.

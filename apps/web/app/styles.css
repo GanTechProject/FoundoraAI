@@ -604,6 +604,88 @@ table code {
   overflow-x: auto;
 }
 
+.brain-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.brain-controls fieldset,
+.brain-controls > button {
+  grid-column: 1 / -1;
+}
+
+.brain-controls fieldset {
+  padding: 16px;
+  border: 1px solid var(--line);
+}
+
+.brain-controls legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.source-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.source-checkboxes label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.source-checkboxes input {
+  width: auto;
+}
+
+.unavailable-sources {
+  display: grid;
+  gap: 14px;
+}
+
+.unavailable-sources div {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.unavailable-sources dt {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+}
+
+.unavailable-sources dd {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.hash-value {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.context-preview {
+  max-height: 520px;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--accent);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -726,6 +808,11 @@ li {
   }
 
   .compact-definition div {
+    grid-template-columns: 1fr;
+  }
+
+  .brain-controls,
+  .source-checkboxes {
     grid-template-columns: 1fr;
   }
 

@@ -137,6 +137,9 @@ try {
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/ai"
     }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/brain/context"
+    }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
         ConvertTo-Json -Compress
@@ -465,6 +468,91 @@ try {
         throw "Explicit reapproval did not create exact profile version two"
     }
 
+    $staleGoalTitle = "Completed context goal $runId"
+    $staleGoal = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/goals" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            title = $staleGoalTitle
+            details = "Must be excluded as stale context"
+            target_date = $null
+        } | ConvertTo-Json -Compress)
+    Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/workspace/goals/$($staleGoal.id)/status" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ status = "completed" } | ConvertTo-Json -Compress) | Out-Null
+
+    $invalidatedGoalTitle = "Cancelled context goal $runId"
+    $invalidatedGoal = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/goals" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            title = $invalidatedGoalTitle
+            details = "Must be excluded as invalidated context"
+            target_date = $null
+        } | ConvertTo-Json -Compress)
+    Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/workspace/goals/$($invalidatedGoal.id)/status" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ status = "cancelled" } | ConvertTo-Json -Compress) | Out-Null
+
+    $alphaBrain = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/brain/context?purpose=planning&token_budget=4096" `
+        -WebSession $ownerSession
+    $alphaContext = [string]$alphaBrain.context
+    if ($alphaBrain.business_id -ne $businessAId -or `
+            $alphaBrain.estimated_tokens -gt $alphaBrain.token_budget -or `
+            -not $alphaContext.Contains("A revised founder-approved operating profile") -or `
+            -not $alphaContext.Contains("Alpha-only goal") -or `
+            $alphaContext.Contains("Beta-only goal") -or `
+            $alphaContext.Contains($staleGoalTitle) -or `
+            $alphaContext.Contains($invalidatedGoalTitle) -or `
+            ([string]$alphaBrain.context_sha256).Length -ne 64) {
+        throw "Alpha business context was not isolated, budgeted, or source-correct"
+    }
+    $staleDecision = $alphaBrain.sources | `
+        Where-Object { $_.source_reference -eq "business_goals/$($staleGoal.id)" } | `
+        Select-Object -First 1
+    $invalidatedDecision = $alphaBrain.sources | `
+        Where-Object { $_.source_reference -eq "business_goals/$($invalidatedGoal.id)" } | `
+        Select-Object -First 1
+    if ($staleDecision.exclusion_reason -ne "stale" -or `
+            $staleDecision.content -or `
+            $invalidatedDecision.exclusion_reason -ne "invalidated" -or `
+            $invalidatedDecision.content) {
+        throw "Stale or invalidated context sources were not safely excluded"
+    }
+    if (-not $alphaBrain.unavailable_sources.knowledge -or `
+            -not $alphaBrain.unavailable_sources.current_tasks) {
+        throw "Unavailable future context sources were not disclosed"
+    }
+
+    $profileOnlyBrain = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/brain/context?purpose=planning&token_budget=4096&sources=business_profile" `
+        -WebSession $ownerSession
+    if (([string]$profileOnlyBrain.context).Contains(
+            "A revised founder-approved operating profile"
+        ) -or `
+            -not ($profileOnlyBrain.sources | Where-Object {
+                    $_.source_type -eq "approved_profile" -and `
+                    $_.exclusion_reason -eq "not_selected"
+                })) {
+        throw "Explicit business context source selection was not enforced"
+    }
+    $tightBrain = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/brain/context?purpose=planning&token_budget=256" `
+        -WebSession $ownerSession
+    if ($tightBrain.estimated_tokens -gt 256 -or `
+            -not ($tightBrain.sources | Where-Object {
+                    $_.exclusion_reason -eq "token_budget"
+                })) {
+        throw "Business context token ceiling was not enforced"
+    }
+
     Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
         -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
         -ContentType "application/json" -WebSession $ownerSession `
@@ -475,6 +563,18 @@ try {
             $betaOnboarding.draft.revision -ne 0 -or `
             $betaOnboarding.approved_profile) {
         throw "Alpha onboarding facts leaked into the Beta business"
+    }
+    $betaBrain = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/brain/context?purpose=planning&token_budget=4096" `
+        -WebSession $ownerSession
+    if ($betaBrain.business_id -ne $businessBId -or `
+            ([string]$betaBrain.context).Contains("Alpha-only goal") -or `
+            ([string]$betaBrain.context).Contains(
+                "A revised founder-approved operating profile"
+            ) -or `
+            -not ([string]$betaBrain.context).Contains("Beta-only goal") -or `
+            -not $betaBrain.unavailable_sources.approved_profile) {
+        throw "Business brain context or availability crossed the selected business boundary"
     }
     Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
         -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
@@ -696,6 +796,15 @@ try {
             -not $webFoundationResponse.Content.Contains("Market")) {
         throw "Real onboarding web action did not persist and resume at step two"
     }
+    $webBrainPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/brain" -WebSession $ownerWebSession
+    if (-not $webBrainPage.Content.Contains("Unified, provenance-first context") -or `
+            -not $webBrainPage.Content.Contains("Model-ready context") -or `
+            -not $webBrainPage.Content.Contains(
+                "No founder-approved onboarding profile exists"
+            )) {
+        throw "Protected business brain and unavailable-source state did not render"
+    }
 
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
@@ -752,7 +861,7 @@ try {
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
     if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_05") {
-        throw "Isolated Phase 05 migration is not current"
+        throw "Isolated Phase 06 schema baseline is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -847,7 +956,7 @@ Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
 if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_05") {
-    throw "Phase 05 migration is not current"
+    throw "Phase 06 schema baseline is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

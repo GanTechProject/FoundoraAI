@@ -73,6 +73,9 @@ export default async function WorkspacePage({
               <Link className="text-link" href="/onboarding">
                 Onboarding
               </Link>
+              <Link className="text-link" href="/brain">
+                Business brain
+              </Link>
               <Link className="text-link" href="/settings/ai">
                 AI gateway
               </Link>

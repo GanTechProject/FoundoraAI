@@ -29,5 +29,11 @@ These questions do not block Phase 00. They are intentionally routed to the phas
    Per-request defaults are 512 output tokens, 8,192 total tokens, and $0.10
    estimated cost, with a hard 4,096 output-token ceiling. Later policy phases may
    add action/day/provider budgets without bypassing these gateway limits.
+9. Phase 06 derives business context on demand rather than persisting a duplicate
+   snapshot. It reads only live workspace records, founder-approved onboarding
+   facts, and current operational goals for the session-selected business.
+10. Context selection uses fixed source priority and a provider-independent upper
+    bound of one token per UTF-8 byte. Completed goals are stale, cancelled goals
+    are invalidated, and unimplemented source domains are reported unavailable.
 
 Other questions can remain open until their named phase.

@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 05 is a portable modular monorepo:
+The implementation through Phase 06 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -10,6 +10,8 @@ The implementation through Phase 05 is a portable modular monorepo:
 - Alembic: a gated migration process that must complete before API and worker startup;
 - a provider-independent model gateway with native HTTP adapters, governed routing,
   budgets, streaming, structured output, and business-scoped usage evidence;
+- a selected-business Context Service with explicit source selection, conservative
+  token ceilings, provenance, and stale/invalidated source exclusion;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -46,7 +48,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 05
+## Implemented foundation through Phase 06
 
 The verified baseline is:
 
@@ -78,6 +80,13 @@ The verified baseline is:
   without storing prompts, output, keys, or raw provider error bodies;
 - a protected AI settings dashboard backed entirely by live configuration and
   persisted usage state.
+- an on-demand business context assembler that reads only live workspace state,
+  founder-approved onboarding facts, and business goals for the selected business;
+- canonical model-ready JSON with fixed source priority, one-token-per-UTF-8-byte
+  budgeting, source-level validity and selection decisions, and SHA-256 integrity
+  fingerprints;
+- explicit unavailable-source reporting for later strategy, knowledge, task,
+  customer, KPI, decision, and memory domains, with no fabricated replacements.
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 

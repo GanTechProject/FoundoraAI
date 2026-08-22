@@ -156,6 +156,9 @@ export default async function OnboardingPage({
           <Link className="text-link" href="/workspace">
             Workspace
           </Link>
+          <Link className="text-link" href="/brain">
+            Business brain
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out

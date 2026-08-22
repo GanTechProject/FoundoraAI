@@ -20,7 +20,7 @@ Status date: 2026-08-22
 | 03 | Business Workspace | COMPLETE | Multiple businesses, per-session switching, profiles, lifecycle status/archive, preferences, goals, PostgreSQL scoping constraints, protected UI/API, and real isolation smoke gates pass |
 | 04 | Business Onboarding | COMPLETE | Resumable revision-checked wizard, exact structured review, explicit founder approval, versioned approved profiles, selected-business isolation, protected UI/API, and Docker acceptance gates pass |
 | 05 | Model Gateway | COMPLETE | Provider-independent OpenAI/Gemini/Anthropic adapters, governed registry/routing, streaming and structured output, bounded retry/fallback/budgets, persisted business-scoped usage, protected UI/API, real Gemini execution, and Docker acceptance gates pass |
-| 06 | Company / Business Brain | NOT IMPLEMENTED | No context service |
+| 06 | Company / Business Brain | COMPLETE | Selected-business Context Service, explicit source selection and token ceilings, source-level provenance, stale/invalidated exclusion, protected API/UI, and full quality/smoke gates pass |
 | 07 | Agent Registry & Runtime | NOT IMPLEMENTED | No agent runtime |
 | 08 | Skill Registry | NOT IMPLEMENTED | No skill runtime |
 | 09 | Task Engine | NOT IMPLEMENTED | No task engine |
@@ -84,4 +84,4 @@ Public SaaS signup, organizations/tenants, subscription billing, team RBAC, ente
 
 ## Next authorized phase
 
-None. Phase 05 is complete and the phase-gated specification requires a new explicit founder instruction before Phase 06 begins.
+None. Phase 06 is complete and the phase-gated specification requires a new explicit founder instruction before Phase 07 begins.
