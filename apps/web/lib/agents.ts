@@ -11,6 +11,31 @@ export type AgentRunStatus =
   | "failed"
   | "cancelled";
 
+export interface AssignedSkill {
+  skill_id: string;
+  version_id: string;
+  version: number;
+}
+
+export interface SkillDefinition {
+  skill_id: string;
+  display_name: string;
+  enabled: boolean;
+  version_id: string;
+  version: number;
+  description: string;
+  compatible_agents: string[];
+  prerequisites: string[];
+  input_schema: Record<string, unknown>;
+  output_schema: Record<string, unknown>;
+  tool_requirements: string[];
+  workflow: string[];
+  permissions: string[];
+  risk_class: string;
+  test_fixtures: Array<Record<string, unknown>>;
+  evaluation_rubric: string[];
+}
+
 export interface AgentDefinition {
   agent_id: string;
   display_name: string;
@@ -33,6 +58,7 @@ export interface AgentDefinition {
   output_schema: Record<string, unknown>;
   evaluation_criteria: string[];
   escalation_criteria: string[];
+  assigned_skills: AssignedSkill[];
 }
 
 export interface AgentUsageCall {
@@ -54,6 +80,9 @@ export interface AgentRun {
   agent_id: string;
   agent_version_id: string;
   agent_version: number;
+  skill_id: string | null;
+  skill_version_id: string | null;
+  skill_version: number | null;
   status: AgentRunStatus;
   structured_input: Record<string, unknown>;
   structured_output: Record<string, unknown> | null;
@@ -84,6 +113,7 @@ export interface AgentRun {
 export interface AgentDashboard {
   business_id: string;
   definitions: AgentDefinition[];
+  skills: SkillDefinition[];
   runs: AgentRun[];
 }
 
@@ -117,8 +147,27 @@ function isDefinition(value: unknown): value is AgentDefinition {
     stringArray(item.allowed_skills) &&
     stringArray(item.allowed_tools) &&
     stringArray(item.forbidden_actions) &&
+    Array.isArray(item.assigned_skills) &&
     typeof item.model_policy === "object" &&
     item.model_policy !== null
+  );
+}
+
+function isSkill(value: unknown): value is SkillDefinition {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Partial<SkillDefinition>;
+  return (
+    typeof item.skill_id === "string" &&
+    typeof item.display_name === "string" &&
+    typeof item.enabled === "boolean" &&
+    typeof item.version === "number" &&
+    typeof item.description === "string" &&
+    stringArray(item.compatible_agents) &&
+    stringArray(item.tool_requirements) &&
+    stringArray(item.workflow) &&
+    stringArray(item.permissions) &&
+    typeof item.risk_class === "string" &&
+    stringArray(item.evaluation_rubric)
   );
 }
 
@@ -149,6 +198,8 @@ function isDashboard(value: unknown): value is AgentDashboard {
     typeof item.business_id === "string" &&
     Array.isArray(item.definitions) &&
     item.definitions.every(isDefinition) &&
+    Array.isArray(item.skills) &&
+    item.skills.every(isSkill) &&
     Array.isArray(item.runs) &&
     item.runs.every(isRun)
   );

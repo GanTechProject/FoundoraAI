@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 
 const errors: Record<string, string> = {
   agent: "The selected agent definition is disabled or unavailable.",
-  invalid: "The objective must contain between 1 and 500 characters.",
+  invalid: "The objective or skill input does not match its required schema.",
+  skill: "That skill version is not assigned to the selected agent version.",
   terminal:
     "That run already reached a terminal state and cannot be cancelled.",
   unavailable: "The agent runtime is temporarily unavailable.",
@@ -58,12 +59,12 @@ export default async function AgentsPage({
     <main className="settings-shell agents-shell">
       <header className="settings-header">
         <div>
-          <p className="eyebrow">FOUNDORA / AGENT RUNTIME</p>
-          <h1>Versioned, inspectable execution</h1>
+          <p className="eyebrow">FOUNDORA / SKILL REGISTRY</p>
+          <h1>Assigned capability, inspectable execution</h1>
           <p className="lede">
-            Every run is pinned to an immutable contract, scoped to the selected
-            business, executed by the worker, and linked to its actual model
-            usage. This phase permits no tools or external side effects.
+            Skills are immutable, schema-bound capability contracts. A run may
+            invoke only a skill assigned to its exact agent version, and every
+            Phase 08 skill is R0 with no tools or external side effects.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -131,11 +132,15 @@ export default async function AgentsPage({
                     <strong>{definition.role}</strong>
                   </div>
                   <div>
-                    <span>Skills</span>
+                    <span>Assigned skills</span>
                     <strong>
-                      {definition.allowed_skills.length
-                        ? definition.allowed_skills.join(", ")
-                        : "None (Phase 08)"}
+                      {definition.assigned_skills.length
+                        ? definition.assigned_skills
+                            .map(
+                              (skill) => `${skill.skill_id}@${skill.version}`,
+                            )
+                            .join(", ")
+                        : "None"}
                     </strong>
                   </div>
                   <div>
@@ -186,10 +191,104 @@ export default async function AgentsPage({
                     rows={3}
                     required
                   />
+                  <label htmlFor={`skill-${definition.agent_id}`}>
+                    Assigned skill
+                  </label>
+                  <select
+                    id={`skill-${definition.agent_id}`}
+                    name="skill_id"
+                    defaultValue={definition.assigned_skills[0]?.skill_id ?? ""}
+                  >
+                    <option value="">No skill</option>
+                    {definition.assigned_skills.map((skill) => (
+                      <option key={skill.version_id} value={skill.skill_id}>
+                        {skill.skill_id}@{skill.version}
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor={`skill-input-${definition.agent_id}`}>
+                    Skill input (JSON)
+                  </label>
+                  <textarea
+                    id={`skill-input-${definition.agent_id}`}
+                    name="skill_input"
+                    defaultValue={'{"focus":"most important business context"}'}
+                    rows={3}
+                  />
                   <button type="submit" disabled={!definition.enabled}>
                     Queue manual R0 run
                   </button>
                 </form>
+              </article>
+            ))}
+          </section>
+
+          <section className="agent-registry" aria-labelledby="skills-heading">
+            <div className="section-heading">
+              <p className="eyebrow">SKILL REGISTRY</p>
+              <h2 id="skills-heading">Immutable capability contracts</h2>
+            </div>
+            {dashboard.skills.map((skill) => (
+              <article className="panel agent-card" key={skill.version_id}>
+                <div className="agent-card__heading">
+                  <div>
+                    <h3>{skill.display_name}</h3>
+                    <code>
+                      {skill.skill_id}@{skill.version}
+                    </code>
+                  </div>
+                  <span className="status-pill status-pill--active">
+                    {skill.risk_class}
+                  </span>
+                </div>
+                <p>{skill.description}</p>
+                <div className="agent-contract-grid">
+                  <div>
+                    <span>Compatible agents</span>
+                    <strong>{skill.compatible_agents.join(", ")}</strong>
+                  </div>
+                  <div>
+                    <span>Tools required</span>
+                    <strong>
+                      {skill.tool_requirements.length
+                        ? skill.tool_requirements.join(", ")
+                        : "None"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Permissions</span>
+                    <strong>{skill.permissions.join(", ")}</strong>
+                  </div>
+                </div>
+                <details>
+                  <summary>Inspect workflow, schemas, and evaluation</summary>
+                  <div className="agent-boundaries">
+                    <div>
+                      <h4>Declarative workflow</h4>
+                      <ol>
+                        {skill.workflow.map((step) => (
+                          <li key={step}>{step}</li>
+                        ))}
+                      </ol>
+                      <h4>Evaluation rubric</h4>
+                      <ul>
+                        {skill.evaluation_rubric.map((criterion) => (
+                          <li key={criterion}>{criterion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <h4>Input schema</h4>
+                      <pre className="context-preview">
+                        {JSON.stringify(skill.input_schema, null, 2)}
+                      </pre>
+                      <h4>Output schema</h4>
+                      <pre className="context-preview">
+                        {JSON.stringify(skill.output_schema, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </details>
               </article>
             ))}
           </section>
@@ -220,6 +319,14 @@ export default async function AgentsPage({
                 <div>
                   <span>Queued</span>
                   <strong>{timestamp(selectedRun.queued_at)} UTC</strong>
+                </div>
+                <div>
+                  <span>Skill version</span>
+                  <strong>
+                    {selectedRun.skill_id
+                      ? `${selectedRun.skill_id}@${selectedRun.skill_version}`
+                      : "No skill"}
+                  </strong>
                 </div>
                 <div>
                   <span>Completed</span>
@@ -315,6 +422,7 @@ export default async function AgentsPage({
                     <tr>
                       <th>Created</th>
                       <th>Agent</th>
+                      <th>Skill</th>
                       <th>Status</th>
                       <th>Usage</th>
                       <th>Inspect</th>
@@ -326,6 +434,11 @@ export default async function AgentsPage({
                         <td>{timestamp(run.created_at)} UTC</td>
                         <td>
                           {run.agent_id}@{run.agent_version}
+                        </td>
+                        <td>
+                          {run.skill_id
+                            ? `${run.skill_id}@${run.skill_version}`
+                            : "-"}
                         </td>
                         <td>{run.error_type ?? run.status}</td>
                         <td>{run.usage.total_tokens} tokens</td>

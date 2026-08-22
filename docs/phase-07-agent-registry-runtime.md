@@ -82,6 +82,8 @@ proves:
 
 ## Explicitly not implemented
 
-Phase 08 skills, tool execution, approval decisions, registry editing, autonomous
-scheduling, external side effects, deployment-provider architecture, and later
-specialist agents are not implemented.
+At Phase 07 completion, skills were not implemented. Phase 08 subsequently added
+the isolated skill registry without changing this phase's historical evidence.
+Tool execution, approval decisions, registry editing, autonomous scheduling,
+external side effects, deployment-provider architecture, and later specialist
+agents remain unimplemented.

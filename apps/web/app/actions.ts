@@ -285,18 +285,39 @@ export async function runModelGatewayCheck(): Promise<never> {
 
 export async function runAgent(formData: FormData): Promise<never> {
   const agentId = field(formData, "agent_id");
+  const skillId = field(formData, "skill_id");
+  let skillInput: Record<string, unknown> = {};
+  if (skillId) {
+    try {
+      const parsed: unknown = JSON.parse(field(formData, "skill_input"));
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        redirect("/agents?error=invalid");
+      }
+      skillInput = parsed as Record<string, unknown>;
+    } catch {
+      redirect("/agents?error=invalid");
+    }
+  }
   let response: Response;
   try {
     response = await authenticatedApiRequest(
       `/agents/${encodeURIComponent(agentId)}/runs`,
-      { objective: field(formData, "objective") },
+      {
+        objective: field(formData, "objective"),
+        skill_id: skillId || null,
+        skill_input: skillInput,
+      },
     );
   } catch {
     redirect("/agents?error=unavailable");
   }
   if (!response.ok) {
     redirect(
-      `/agents?error=${response.status === 422 ? "invalid" : response.status === 404 ? "agent" : "unavailable"}`,
+      `/agents?error=${response.status === 422 ? "invalid" : response.status === 403 ? "skill" : response.status === 404 ? "agent" : "unavailable"}`,
     );
   }
   const value: unknown = await response.json();

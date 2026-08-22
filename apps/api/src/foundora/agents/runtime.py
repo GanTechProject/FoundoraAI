@@ -14,7 +14,15 @@ from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.infrastructure.database import get_session_factory
 from foundora.model_gateway.service import GatewayRequest, GatewayResult, ModelGateway
 from foundora.model_gateway.types import GatewayError
-from foundora.models import Agent, AgentMessage, AgentRun, AgentVersion
+from foundora.models import (
+    Agent,
+    AgentMessage,
+    AgentRun,
+    AgentSkillAssignment,
+    AgentVersion,
+    Skill,
+    SkillVersion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +44,14 @@ class ExecutionClaim:
     output_schema: dict[str, object]
     model_policy: dict[str, object]
     forbidden_actions: list[str]
+    skill_id: str | None
+    skill_version: int | None
+    skill_description: str | None
+    skill_input_schema: dict[str, object] | None
+    skill_workflow: list[str]
+    skill_permissions: list[str]
+    skill_tool_requirements: list[str]
+    skill_evaluation_rubric: list[str]
 
 
 class RuntimeRepository(Protocol):
@@ -88,6 +104,44 @@ class SqlRuntimeRepository:
                 )
                 await database.commit()
                 return None
+            skill: Skill | None = None
+            skill_version: SkillVersion | None = None
+            if run.skill_version_id is not None:
+                skill_version = await database.get(SkillVersion, run.skill_version_id)
+                if skill_version is not None:
+                    skill = await database.get(Skill, skill_version.skill_id)
+                assignment = await database.get(
+                    AgentSkillAssignment,
+                    {
+                        "agent_version_id": run.agent_version_id,
+                        "skill_version_id": run.skill_version_id,
+                    },
+                )
+                if (
+                    skill is None
+                    or skill_version is None
+                    or assignment is None
+                    or not skill.enabled
+                    or skill.id not in version.allowed_skills
+                    or agent.id not in skill_version.compatible_agents
+                ):
+                    run.status = "failed"
+                    run.error_type = "skill_not_assigned"
+                    run.error_message = "The pinned skill is not assigned to this agent version"
+                    run.completed_at = _now()
+                    database.add(
+                        AgentMessage(
+                            id=uuid.uuid4(),
+                            run_id=run.id,
+                            sequence=2,
+                            role="system",
+                            message_type="error",
+                            content={"error_type": run.error_type},
+                            created_at=run.completed_at,
+                        )
+                    )
+                    await database.commit()
+                    return None
             run.status = "running"
             run.started_at = _now()
             run.model_operation_id = operation_id
@@ -101,9 +155,31 @@ class SqlRuntimeRepository:
                 purpose=version.purpose,
                 structured_input=dict(run.structured_input),
                 input_schema=dict(version.input_schema),
-                output_schema=dict(version.output_schema),
+                output_schema=dict(
+                    skill_version.output_schema
+                    if skill_version is not None
+                    else version.output_schema
+                ),
                 model_policy=dict(version.model_policy),
                 forbidden_actions=list(version.forbidden_actions),
+                skill_id=skill_version.skill_id if skill_version is not None else None,
+                skill_version=skill_version.version if skill_version is not None else None,
+                skill_description=(
+                    skill_version.description if skill_version is not None else None
+                ),
+                skill_input_schema=(
+                    dict(skill_version.input_schema) if skill_version is not None else None
+                ),
+                skill_workflow=(list(skill_version.workflow) if skill_version is not None else []),
+                skill_permissions=(
+                    list(skill_version.permissions) if skill_version is not None else []
+                ),
+                skill_tool_requirements=(
+                    list(skill_version.tool_requirements) if skill_version is not None else []
+                ),
+                skill_evaluation_rubric=(
+                    list(skill_version.evaluation_rubric) if skill_version is not None else []
+                ),
             )
 
     async def complete(self, run_id: uuid.UUID, output: dict[str, object]) -> bool:
@@ -183,6 +259,14 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
         "facts from assumptions. Return only JSON matching the supplied schema. "
         f"Forbidden actions: {json.dumps(claim.forbidden_actions, ensure_ascii=False)}"
     )
+    if claim.skill_id is not None:
+        system_prompt += (
+            f" Invoke only assigned skill {claim.skill_id} version {claim.skill_version}. "
+            f"Skill description: {claim.skill_description} "
+            f"Declarative steps: {json.dumps(claim.skill_workflow, ensure_ascii=False)}. "
+            f"Permissions: {json.dumps(claim.skill_permissions, ensure_ascii=False)}. "
+            f"Evaluation rubric: {json.dumps(claim.skill_evaluation_rubric, ensure_ascii=False)}."
+        )
     return GatewayRequest(
         task_type=task_type,
         prompt=json.dumps(claim.structured_input, ensure_ascii=False, sort_keys=True),
@@ -212,6 +296,22 @@ class AgentRuntime:
             return
         try:
             validate_schema(claim.structured_input, claim.input_schema)
+            if claim.skill_id is not None:
+                if claim.skill_tool_requirements:
+                    raise AgentSchemaError("Assigned skill requires unsupported tools")
+                skill_payload = claim.structured_input.get("skill")
+                if not isinstance(skill_payload, dict):
+                    raise AgentSchemaError("Pinned skill input is missing")
+                if (
+                    skill_payload.get("skill_id") != claim.skill_id
+                    or skill_payload.get("version") != claim.skill_version
+                ):
+                    raise AgentSchemaError("Pinned skill identity does not match the run")
+                if claim.skill_input_schema is None:
+                    raise AgentSchemaError("Pinned skill schema is missing")
+                validate_schema(
+                    skill_payload.get("input"), claim.skill_input_schema, "$.skill.input"
+                )
             result = await self._gateway.generate(
                 claim.business_id,
                 _gateway_request(claim),

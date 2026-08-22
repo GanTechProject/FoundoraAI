@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -9,7 +10,12 @@ from fastapi.testclient import TestClient
 
 from foundora.agents.runtime import AgentRuntime, ExecutionClaim
 from foundora.agents.schema import AgentSchemaError, validate_schema
-from foundora.agents.service import AgentDashboard, AgentNotFound, AgentRunRecord
+from foundora.agents.service import (
+    AgentDashboard,
+    AgentNotFound,
+    AgentRunRecord,
+    SkillNotAssigned,
+)
 from foundora.api.agents import _run_view
 from foundora.api.auth import require_auth, require_csrf
 from foundora.auth.service import AuthContext
@@ -95,6 +101,14 @@ def execution_claim() -> ExecutionClaim:
             "cost_budget_microusd": 2000,
         },
         forbidden_actions=["External side effects"],
+        skill_id=None,
+        skill_version=None,
+        skill_description=None,
+        skill_input_schema=None,
+        skill_workflow=[],
+        skill_permissions=[],
+        skill_tool_requirements=[],
+        skill_evaluation_rubric=[],
     )
 
 
@@ -195,6 +209,69 @@ async def test_agent_runtime_persists_provider_failure_honestly() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_runtime_executes_pinned_skill_contract() -> None:
+    base = execution_claim()
+    skill_input_schema: dict[str, object] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["focus"],
+        "properties": {"focus": {"type": "string", "minLength": 1}},
+    }
+    claim = replace(
+        base,
+        structured_input={
+            "objective": "Inspect context",
+            "skill": {
+                "skill_id": "summarize-business-context",
+                "version": 1,
+                "input": {"focus": "supported facts"},
+            },
+        },
+        input_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["objective", "skill"],
+            "properties": {
+                "objective": {"type": "string", "minLength": 1},
+                "skill": {"type": "object"},
+            },
+        },
+        skill_id="summarize-business-context",
+        skill_version=1,
+        skill_description="Summarize supplied context",
+        skill_input_schema=skill_input_schema,
+        skill_workflow=["Read supplied context", "Return summary"],
+        skill_permissions=["Read run context"],
+        skill_evaluation_rubric=["Grounded output"],
+    )
+    repository = FakeRepository(claim)
+    gateway = FakeGateway(
+        text=('{"summary":"Verified","observations":[],"escalation_required":false}')
+    )
+
+    await AgentRuntime(repository=repository, gateway=gateway).execute(claim.run_id)
+
+    assert gateway.called is True
+    assert repository.completed is not None
+    assert repository.failure is None
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_rejects_skill_that_requires_tools() -> None:
+    claim = replace(execution_claim(), skill_id="tool-skill", skill_tool_requirements=["web"])
+    repository = FakeRepository(claim)
+    gateway = FakeGateway(text="{}")
+
+    await AgentRuntime(repository=repository, gateway=gateway).execute(claim.run_id)
+
+    assert gateway.called is False
+    assert repository.failure == (
+        "agent_schema_invalid",
+        "Assigned skill requires unsupported tools",
+    )
+
+
+@pytest.mark.asyncio
 async def test_cancelled_queued_run_is_not_executed() -> None:
     repository = FakeRepository(None)
     gateway = FakeGateway(text="{}")
@@ -244,6 +321,7 @@ def test_agent_dashboard_is_business_scoped_and_not_cached() -> None:
                     return_value=AgentDashboard(
                         business_id=business_id,
                         definitions=[],
+                        skills=[],
                         runs=[],
                     )
                 ),
@@ -259,6 +337,7 @@ def test_agent_dashboard_is_business_scoped_and_not_cached() -> None:
     assert response.json() == {
         "business_id": str(business_id),
         "definitions": [],
+        "skills": [],
         "runs": [],
     }
 
@@ -285,6 +364,33 @@ def test_agent_create_maps_disabled_definition_without_enqueuing() -> None:
     assert response.status_code == 404
 
 
+def test_agent_create_denies_unassigned_skill() -> None:
+    context = auth_context(uuid.uuid4())
+    app.dependency_overrides[require_csrf] = lambda: context
+    try:
+        with (
+            patch(
+                "foundora.api.agents.AgentService.create_run",
+                new=AsyncMock(side_effect=SkillNotAssigned),
+            ),
+            TestClient(app) as client,
+        ):
+            response = client.post(
+                "/agents/runtime-verification-agent/runs",
+                json={
+                    "objective": "Create a plan",
+                    "skill_id": "generate-structured-plan",
+                    "skill_input": {"goal": "Launch", "constraints": []},
+                },
+                headers={"Origin": "http://localhost:3000"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "skill_not_assigned"
+
+
 def test_run_view_links_messages_and_gateway_usage() -> None:
     now = datetime.now(UTC)
     run_id = uuid.uuid4()
@@ -295,6 +401,7 @@ def test_run_view_links_messages_and_gateway_usage() -> None:
         business_id=business_id,
         agent_id="runtime-verification-agent",
         agent_version_id=version_id,
+        skill_version_id=None,
         status="completed",
         structured_input={"objective": "Inspect"},
         structured_output={"summary": "Done"},
@@ -367,7 +474,13 @@ def test_run_view_links_messages_and_gateway_usage() -> None:
     )
 
     view = _run_view(
-        AgentRunRecord(run=run, version=version, messages=[message], gateway_calls=[call])
+        AgentRunRecord(
+            run=run,
+            version=version,
+            skill_version=None,
+            messages=[message],
+            gateway_calls=[call],
+        )
     )
 
     assert view.business_id == business_id

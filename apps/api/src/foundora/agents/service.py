@@ -27,8 +27,11 @@ from foundora.models import (
     Agent,
     AgentMessage,
     AgentRun,
+    AgentSkillAssignment,
     AgentVersion,
     ModelGatewayCall,
+    Skill,
+    SkillVersion,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +50,10 @@ class AgentRunNotCancellable(Exception):
     pass
 
 
+class SkillNotAssigned(Exception):
+    pass
+
+
 class AgentQueueUnavailable(Exception):
     def __init__(self, run_id: uuid.UUID) -> None:
         self.run_id = run_id
@@ -57,12 +64,20 @@ class AgentQueueUnavailable(Exception):
 class AgentDefinitionRecord:
     agent: Agent
     version: AgentVersion
+    assigned_skills: list[SkillVersion]
+
+
+@dataclass(frozen=True)
+class SkillDefinitionRecord:
+    skill: Skill
+    version: SkillVersion
 
 
 @dataclass(frozen=True)
 class AgentRunRecord:
     run: AgentRun
     version: AgentVersion
+    skill_version: SkillVersion | None
     messages: list[AgentMessage]
     gateway_calls: list[ModelGatewayCall]
 
@@ -71,6 +86,7 @@ class AgentRunRecord:
 class AgentDashboard:
     business_id: uuid.UUID
     definitions: list[AgentDefinitionRecord]
+    skills: list[SkillDefinitionRecord]
     runs: list[AgentRunRecord]
 
 
@@ -130,16 +146,48 @@ class AgentService:
                     .order_by(Agent.id)
                 )
             ).all()
+            skill_rows = (
+                await database.execute(
+                    select(Skill, SkillVersion)
+                    .join(
+                        SkillVersion,
+                        and_(
+                            SkillVersion.skill_id == Skill.id,
+                            SkillVersion.version == Skill.current_version,
+                        ),
+                    )
+                    .order_by(Skill.id)
+                )
+            ).all()
+            version_ids = [version.id for _, version in definition_rows]
+            assigned_by_agent_version: dict[uuid.UUID, list[SkillVersion]] = {
+                version_id: [] for version_id in version_ids
+            }
+            if version_ids:
+                assignment_rows = (
+                    await database.execute(
+                        select(AgentSkillAssignment.agent_version_id, SkillVersion)
+                        .join(
+                            SkillVersion,
+                            SkillVersion.id == AgentSkillAssignment.skill_version_id,
+                        )
+                        .where(AgentSkillAssignment.agent_version_id.in_(version_ids))
+                        .order_by(SkillVersion.skill_id, SkillVersion.version)
+                    )
+                ).all()
+                for agent_version_id, assigned_version in assignment_rows:
+                    assigned_by_agent_version[agent_version_id].append(assigned_version)
             run_rows = (
                 await database.execute(
-                    select(AgentRun, AgentVersion)
+                    select(AgentRun, AgentVersion, SkillVersion)
                     .join(AgentVersion, AgentVersion.id == AgentRun.agent_version_id)
+                    .outerjoin(SkillVersion, SkillVersion.id == AgentRun.skill_version_id)
                     .where(AgentRun.business_id == business.id)
                     .order_by(desc(AgentRun.created_at))
                     .limit(20)
                 )
             ).all()
-            run_ids = [run.id for run, _ in run_rows]
+            run_ids = [run.id for run, _, _ in run_rows]
             calls_by_run: dict[uuid.UUID, list[ModelGatewayCall]] = {
                 run_id: [] for run_id in run_ids
             }
@@ -160,23 +208,38 @@ class AgentService:
         return AgentDashboard(
             business_id=business.id,
             definitions=[
-                AgentDefinitionRecord(agent=agent, version=version)
+                AgentDefinitionRecord(
+                    agent=agent,
+                    version=version,
+                    assigned_skills=assigned_by_agent_version.get(version.id, []),
+                )
                 for agent, version in definition_rows
+            ],
+            skills=[
+                SkillDefinitionRecord(skill=skill, version=version) for skill, version in skill_rows
             ],
             runs=[
                 AgentRunRecord(
                     run=run,
                     version=version,
+                    skill_version=skill_version,
                     messages=[],
                     gateway_calls=calls_by_run.get(run.id, []),
                 )
-                for run, version in run_rows
+                for run, version, skill_version in run_rows
             ],
         )
 
     async def create_run(
-        self, context: AuthContext, agent_id: str, objective: str
+        self,
+        context: AuthContext,
+        agent_id: str,
+        objective: str,
+        skill_id: str | None = None,
+        skill_input: dict[str, object] | None = None,
     ) -> AgentRunRecord:
+        skill_version: SkillVersion | None = None
+        normalized_skill_input = skill_input or {}
         async with self._session_factory() as database:
             business = await resolve_selected_business(database, context)
             row = (
@@ -195,6 +258,37 @@ class AgentService:
             if row is None:
                 raise AgentNotFound
             agent, version = row
+            if skill_id is not None:
+                skill_row = (
+                    await database.execute(
+                        select(Skill, SkillVersion)
+                        .join(
+                            SkillVersion,
+                            and_(
+                                SkillVersion.skill_id == Skill.id,
+                                SkillVersion.version == Skill.current_version,
+                            ),
+                        )
+                        .join(
+                            AgentSkillAssignment,
+                            and_(
+                                AgentSkillAssignment.skill_version_id == SkillVersion.id,
+                                AgentSkillAssignment.agent_version_id == version.id,
+                            ),
+                        )
+                        .where(Skill.id == skill_id, Skill.enabled.is_(True))
+                    )
+                ).one_or_none()
+                if (
+                    skill_row is None
+                    or skill_id not in version.allowed_skills
+                    or agent.id not in skill_row[1].compatible_agents
+                ):
+                    raise SkillNotAssigned
+                _, skill_version = skill_row
+                validate_schema(normalized_skill_input, skill_version.input_schema)
+            elif normalized_skill_input:
+                raise SkillNotAssigned
 
         policy = version.model_policy
         context_budget = policy.get("context_token_budget")
@@ -221,6 +315,12 @@ class AgentService:
             "context_id": business_context.context_id,
             "context_sha256": business_context.context_sha256,
         }
+        if skill_version is not None:
+            structured_input["skill"] = {
+                "skill_id": skill_version.skill_id,
+                "version": skill_version.version,
+                "input": normalized_skill_input,
+            }
         validate_schema(structured_input, version.input_schema)
         now = _now()
         run = AgentRun(
@@ -228,6 +328,7 @@ class AgentService:
             business_id=business.id,
             agent_id=agent.id,
             agent_version_id=version.id,
+            skill_version_id=skill_version.id if skill_version is not None else None,
             status="queued",
             structured_input=structured_input,
             structured_output=None,
@@ -247,7 +348,12 @@ class AgentService:
             sequence=1,
             role="user",
             message_type="input",
-            content={"objective": objective, "context_id": business_context.context_id},
+            content={
+                "objective": objective,
+                "context_id": business_context.context_id,
+                "skill_id": skill_version.skill_id if skill_version is not None else None,
+                "skill_input": normalized_skill_input if skill_version is not None else None,
+            },
             created_at=now,
         )
         async with self._session_factory() as database:
@@ -335,14 +441,15 @@ class AgentService:
         async with self._session_factory() as database:
             row = (
                 await database.execute(
-                    select(AgentRun, AgentVersion)
+                    select(AgentRun, AgentVersion, SkillVersion)
                     .join(AgentVersion, AgentVersion.id == AgentRun.agent_version_id)
+                    .outerjoin(SkillVersion, SkillVersion.id == AgentRun.skill_version_id)
                     .where(AgentRun.id == run_id, AgentRun.business_id == business_id)
                 )
             ).one_or_none()
             if row is None:
                 raise AgentRunNotFound
-            run, version = row
+            run, version, skill_version = row
             messages = list(
                 await database.scalars(
                     select(AgentMessage)
@@ -363,6 +470,7 @@ class AgentService:
         return AgentRunRecord(
             run=run,
             version=version,
+            skill_version=skill_version,
             messages=messages,
             gateway_calls=calls,
         )

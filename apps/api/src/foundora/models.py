@@ -235,6 +235,58 @@ class AgentVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class Skill(Base):
+    __tablename__ = "skills"
+    __table_args__ = (CheckConstraint("current_version > 0", name="ck_skills_current_version"),)
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160))
+    enabled: Mapped[bool] = mapped_column(default=True)
+    current_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SkillVersion(Base):
+    __tablename__ = "skill_versions"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_skill_versions_version"),
+        CheckConstraint(
+            "risk_class IN ('R0', 'R1', 'R2', 'R3', 'R4', 'R5')",
+            name="ck_skill_versions_risk_class",
+        ),
+        UniqueConstraint("skill_id", "version", name="uq_skill_versions_skill_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    skill_id: Mapped[str] = mapped_column(ForeignKey("skills.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(Text)
+    compatible_agents: Mapped[list[str]] = mapped_column(JSON)
+    prerequisites: Mapped[list[str]] = mapped_column(JSON)
+    input_schema: Mapped[dict[str, object]] = mapped_column(JSON)
+    output_schema: Mapped[dict[str, object]] = mapped_column(JSON)
+    tool_requirements: Mapped[list[str]] = mapped_column(JSON)
+    workflow: Mapped[list[str]] = mapped_column(JSON)
+    permissions: Mapped[list[str]] = mapped_column(JSON)
+    risk_class: Mapped[str] = mapped_column(String(2))
+    test_fixtures: Mapped[list[dict[str, object]]] = mapped_column(JSON)
+    evaluation_rubric: Mapped[list[str]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AgentSkillAssignment(Base):
+    __tablename__ = "agent_skill_assignments"
+
+    agent_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_versions.id", ondelete="CASCADE"), primary_key=True
+    )
+    skill_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("skill_versions.id", ondelete="RESTRICT"), primary_key=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AgentRun(Base):
     __tablename__ = "agent_runs"
     __table_args__ = (
@@ -254,6 +306,9 @@ class AgentRun(Base):
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id", ondelete="RESTRICT"))
     agent_version_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agent_versions.id", ondelete="RESTRICT"), index=True
+    )
+    skill_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("skill_versions.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(24))
     structured_input: Mapped[dict[str, object]] = mapped_column(JSON)

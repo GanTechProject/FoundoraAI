@@ -71,6 +71,28 @@ function Wait-ForAgentRun {
     throw "Agent run did not reach a terminal state: $Uri"
 }
 
+function Invoke-WithTransientHttpRetry {
+    param(
+        [scriptblock]$Request,
+        [int]$Attempts = 3
+    )
+    foreach ($attempt in 1..$Attempts) {
+        try {
+            return & $Request
+        }
+        catch {
+            $response = $_.Exception.Response
+            if (-not $response) { throw }
+            $statusCode = [int]$response.StatusCode
+            if ($statusCode -notin @(502, 503, 504) -or $attempt -eq $Attempts) {
+                throw
+            }
+        }
+        Start-Sleep -Seconds (20 * $attempt)
+    }
+    throw "Transient HTTP request exhausted its bounded retries"
+}
+
 Invoke-Checked { docker compose up --build --detach --wait }
 
 $apiPort = if ($env:API_PORT) { $env:API_PORT } else { "8000" }
@@ -711,10 +733,13 @@ try {
                 cost_budget_microusd = 2000
             } | ConvertTo-Json -Compress)
     }
-    $liveGatewayResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/ai/generate" `
-        -Method Post `
-        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
-        -ContentType "application/json" -WebSession $ownerSession -Body $liveGatewayBody
+    $liveGatewayResponse = Invoke-WithTransientHttpRetry -Request {
+        Invoke-RestMethod -Uri "$smokeApiOrigin/ai/generate" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body $liveGatewayBody
+    }
     if ([string]::IsNullOrWhiteSpace($liveGatewayResponse.text) -or `
             $liveGatewayResponse.provider -notin @("openai", "gemini") -or `
             $liveGatewayResponse.total_tokens -le 0 -or `
@@ -731,7 +756,7 @@ try {
     }
     $persistedGatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
         -WebSession $ownerSession
-    if ($persistedGatewayDashboard.usage.calls -ne 1 -or `
+    if ($persistedGatewayDashboard.usage.calls -lt 1 -or `
             $persistedGatewayDashboard.usage.total_tokens -le 0 -or `
             $persistedGatewayDashboard.recent_calls.Count -lt 1) {
         throw "Successful live model usage was not persisted"
@@ -742,32 +767,77 @@ try {
     if ($agentDashboard.business_id -ne $businessBId -or `
             $agentDashboard.definitions.Count -ne 1 -or `
             $agentDashboard.definitions[0].agent_id -ne "runtime-verification-agent" -or `
-            $agentDashboard.definitions[0].version -ne 1 -or `
+            $agentDashboard.definitions[0].version -ne 2 -or `
             $agentDashboard.definitions[0].risk_level -ne "R0" -or `
             $agentDashboard.definitions[0].maximum_autonomy -ne "manual_run_only" -or `
-            $agentDashboard.definitions[0].allowed_skills.Count -ne 0 -or `
+            $agentDashboard.definitions[0].allowed_skills.Count -ne 1 -or `
+            $agentDashboard.definitions[0].allowed_skills[0] -ne `
+                "summarize-business-context" -or `
+            $agentDashboard.definitions[0].assigned_skills.Count -ne 1 -or `
+            $agentDashboard.definitions[0].assigned_skills[0].skill_id -ne `
+                "summarize-business-context" -or `
             $agentDashboard.definitions[0].allowed_tools.Count -ne 0) {
         throw "Versioned R0 agent definition or permission boundary is incorrect"
     }
+    $summarySkill = $agentDashboard.skills | Where-Object {
+        $_.skill_id -eq "summarize-business-context"
+    } | Select-Object -First 1
+    if (@($agentDashboard.skills).Count -ne 3 -or `
+            -not $summarySkill -or `
+            $summarySkill.risk_class -ne "R0" -or `
+            @($summarySkill.tool_requirements).Count -ne 0 -or `
+            @($summarySkill.compatible_agents) -notcontains `
+                "runtime-verification-agent" -or `
+            @($summarySkill.test_fixtures).Count -lt 1 -or `
+            @($summarySkill.evaluation_rubric).Count -lt 1) {
+        throw "Immutable skill registry metadata is incomplete"
+    }
     $agentRunBody = @{
         objective = "Inspect the selected business context and return one grounded observation."
+        skill_id = "summarize-business-context"
+        skill_input = @{ focus = "Identify one supported business observation" }
     } | ConvertTo-Json -Compress
+    $unassignedSkillBody = @{
+        objective = "Generate a plan"
+        skill_id = "generate-structured-plan"
+        skill_input = @{ goal = "Prepare launch"; constraints = @() }
+    } | ConvertTo-Json -Compress
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/agents/runtime-verification-agent/runs" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body $unassignedSkillBody
+    }
     Assert-HttpStatus -ExpectedStatus 403 -Request {
         Invoke-WebRequest -UseBasicParsing `
             -Uri "$smokeApiOrigin/agents/runtime-verification-agent/runs" `
             -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
             -ContentType "application/json" -WebSession $ownerSession -Body $agentRunBody
     }
-    $agentRun = Invoke-RestMethod `
-        -Uri "$smokeApiOrigin/agents/runtime-verification-agent/runs" -Method Post `
-        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
-        -ContentType "application/json" -WebSession $ownerSession -Body $agentRunBody
-    if ($agentRun.business_id -ne $businessBId -or `
-            $agentRun.status -notin @("queued", "running", "completed")) {
-        throw "Agent run was not durably queued for the selected business"
+    $transientAgentFailures = 0
+    $completedAgentRun = $null
+    foreach ($agentAttempt in 1..3) {
+        $agentRun = Invoke-RestMethod `
+            -Uri "$smokeApiOrigin/agents/runtime-verification-agent/runs" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession -Body $agentRunBody
+        if ($agentRun.business_id -ne $businessBId -or `
+                $agentRun.skill_id -ne "summarize-business-context" -or `
+                $agentRun.skill_version -ne 1 -or `
+                $agentRun.status -notin @("queued", "running", "completed")) {
+            throw "Agent run was not durably queued for the selected business"
+        }
+        $completedAgentRun = Wait-ForAgentRun `
+            -Uri "$smokeApiOrigin/agents/runs/$($agentRun.id)" -WebSession $ownerSession
+        if ($completedAgentRun.status -eq "completed") { break }
+        $isTransientProviderFailure = $completedAgentRun.error_type -match `
+            '^provider_(http_(408|409|425|429|5[0-9][0-9])|timeout|transport)$'
+        if (-not $isTransientProviderFailure -or $agentAttempt -eq 3) { break }
+        $transientAgentFailures += 1
+        Start-Sleep -Seconds (20 * $agentAttempt)
     }
-    $completedAgentRun = Wait-ForAgentRun `
-        -Uri "$smokeApiOrigin/agents/runs/$($agentRun.id)" -WebSession $ownerSession
     $agentInput = $completedAgentRun.structured_input | ConvertTo-Json -Depth 30 -Compress
     if ($completedAgentRun.status -ne "completed" -or `
             -not $completedAgentRun.structured_output.summary -or `
@@ -776,6 +846,9 @@ try {
             $completedAgentRun.usage.total_tokens -le 0 -or `
             $completedAgentRun.usage.estimated_cost_microusd -gt 10000 -or `
             -not $completedAgentRun.model_operation_id -or `
+            $completedAgentRun.skill_id -ne "summarize-business-context" -or `
+            $completedAgentRun.skill_version -ne 1 -or `
+            -not $completedAgentRun.skill_version_id -or `
             -not ($completedAgentRun.usage.attempts | Where-Object {
                     $_.operation_id -eq $completedAgentRun.model_operation_id
                 }) -or `
@@ -918,10 +991,12 @@ try {
     }
     $webAgentsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/agents" -WebSession $ownerWebSession
-    if (-not $webAgentsPage.Content.Contains("Versioned, inspectable execution") -or `
+    if (-not $webAgentsPage.Content.Contains("Assigned capability, inspectable execution") -or `
             -not $webAgentsPage.Content.Contains("Runtime Verification Agent") -or `
             -not $webAgentsPage.Content.Contains("Queue manual R0 run") -or `
-            -not $webAgentsPage.Content.Contains("Phase 08")) {
+            -not $webAgentsPage.Content.Contains("Summarize Business Context") -or `
+            -not $webAgentsPage.Content.Contains("Generate Structured Plan") -or `
+            -not $webAgentsPage.Content.Contains("Analyze Provided Data")) {
         throw "Protected agent registry and permission boundary did not render"
     }
 
@@ -979,8 +1054,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_06") {
-        throw "Isolated Phase 07 migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_07") {
+        throw "Isolated Phase 08 migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -1020,7 +1095,12 @@ try {
     $agentRunEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
         "SELECT count(*) || '|' || count(*) FILTER (WHERE status = 'completed') || '|' || count(*) FILTER (WHERE status = 'failed') || '|' || count(*) FILTER (WHERE status = 'cancelled') FROM agent_runs WHERE business_id = '$businessBId'"
-    if ($LASTEXITCODE -ne 0 -or $agentRunEvidence.Trim() -ne "3|1|1|1") {
+    $expectedAgentRuns = 3 + $transientAgentFailures
+    $expectedFailedAgentRuns = 1 + $transientAgentFailures
+    $expectedAgentRunEvidence = `
+        "$expectedAgentRuns|1|$expectedFailedAgentRuns|1"
+    if ($LASTEXITCODE -ne 0 -or `
+            $agentRunEvidence.Trim() -ne $expectedAgentRunEvidence) {
         throw "Durable agent lifecycle evidence is incorrect"
     }
     $agentUsageEvidence = docker compose exec -T postgres psql -U foundora `
@@ -1034,8 +1114,20 @@ try {
     $agentContractEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
         "SELECT count(*) || '|' || min(current_version) FROM agents WHERE id = 'runtime-verification-agent' AND enabled = true"
-    if ($LASTEXITCODE -ne 0 -or $agentContractEvidence.Trim() -ne "1|1") {
+    if ($LASTEXITCODE -ne 0 -or $agentContractEvidence.Trim() -ne "1|2") {
         throw "Versioned agent registry evidence is incorrect"
+    }
+    $skillContractEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM skills) || '|' || (SELECT count(*) FROM skill_versions) || '|' || (SELECT count(*) FROM agent_skill_assignments)"
+    if ($LASTEXITCODE -ne 0 -or $skillContractEvidence.Trim() -ne "3|3|1") {
+        throw "Skill registry or exact-version assignment evidence is incorrect"
+    }
+    $skillRunEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT count(*) FROM agent_runs r JOIN skill_versions s ON s.id = r.skill_version_id WHERE r.id = '$($agentRun.id)' AND s.skill_id = 'summarize-business-context' AND s.version = 1"
+    if ($LASTEXITCODE -ne 0 -or $skillRunEvidence.Trim() -ne "1") {
+        throw "Successful agent run was not pinned to its skill version"
     }
     $providerValidationCount = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc "SELECT count(*) FROM model_provider_validations"
@@ -1085,6 +1177,8 @@ finally {
     $foundationMultipartBytes = $null
     $liveGatewayBody = $null
     $agentRunBody = $null
+    $unassignedSkillBody = $null
+    $transientAgentFailures = $null
 }
 
 $webResponse = Invoke-WebRequest -UseBasicParsing -Uri "$publicOrigin/login"
@@ -1107,8 +1201,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_06") {
-    throw "Phase 07 migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_07") {
+    throw "Phase 08 migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 07 is a portable modular monorepo:
+The implementation through Phase 08 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -15,6 +15,8 @@ The implementation through Phase 07 is a portable modular monorepo:
 - a versioned agent registry and durable run runtime that snapshots structured
   selected-business input, delegates model execution to the gateway, and records
   lifecycle, messages, failures, cancellation, and usage linkage;
+- an immutable skill registry with schema, compatibility, prerequisite, tool,
+  permission, risk, fixture, rubric, and exact agent-version assignment contracts;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -51,7 +53,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 07
+## Implemented foundation through Phase 08
 
 The verified baseline is:
 
@@ -92,14 +94,19 @@ The verified baseline is:
   customer, KPI, decision, and memory domains, with no fabricated replacements.
 - immutable agent-version contracts covering purpose, responsibilities,
   permissions, model policy, data scope, schemas, evaluation, and escalation;
-- a manual-only R0 verification agent with no tools, skills, credentials, or
-  external side effects;
+- a manual-only R0 verification agent with no tools, credentials, or external side
+  effects and one exact-version assigned summary skill;
 - durable `queued`, `running`, `waiting_tool`, `waiting_approval`, `completed`,
   `failed`, and `cancelled` states, with worker claims and terminal transitions
   serialized in PostgreSQL;
 - structured input/output validation, selected-business run inspection,
   cancellation, sanitized persisted errors, and model-attempt usage linked to the
   run and shared operation identity.
+- three immutable R0, tool-free skill contracts with schemas, compatibility,
+  prerequisites, permissions, declarative workflow, fixtures, and evaluation
+  rubrics;
+- exact agent-version-to-skill-version assignments, run-level skill pinning, and
+  authorization/schema re-validation by both the API and worker;
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 
@@ -126,6 +133,8 @@ Dependencies should point inward toward domain contracts. Provider SDK types, OR
 - Failures persist honestly and remain observable; no catch path returns fabricated success.
 - Every run pins an immutable agent version; later registry edits cannot rewrite
   historical execution contracts.
+- Invoking a skill requires an exact assignment to the pinned agent version;
+  compatibility metadata alone never authorizes execution.
 - One action must ultimately be traceable from UI request through task, agent, skill, tool/provider, and result.
 - Tests must include timeouts, retries, duplicates, partial workflow failure, worker interruption, and approval bypass attempts as the relevant phases arrive.
 

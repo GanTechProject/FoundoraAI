@@ -38,13 +38,19 @@ These questions do not block Phase 00. They are intentionally routed to the phas
     are invalidated, and unimplemented source domains are reported unavailable.
 11. Phase 07 stores reusable agent identity separately from immutable versions and
     pins every run to a version. The first agent is R0, manual-run-only, read-only,
-    and has empty tool and skill permissions.
+    and initially had empty tool and skill permissions.
 12. Agent runs snapshot approved selected-business context at enqueue time, execute
     only in the existing worker through the governed model gateway, and persist
     honest terminal output or failure plus directly linked usage attempts.
 13. Cancellation is cooperative at the durable boundary: queued work is skipped,
     and a late provider result cannot overwrite a run already marked cancelled.
-    Tool waits, approval waits, and skills remain lifecycle-compatible but unused
-    until their authorized phases.
+    Tool waits and approval waits remain lifecycle-compatible but unused until
+    their authorized phases.
+14. Phase 08 stores skill identity separately from immutable versions. Compatibility
+    supports discovery but never grants authority; an exact immutable agent-version
+    to skill-version assignment is required at enqueue and re-checked by the worker.
+15. The three initial skills are R0 and tool-free. Only the business-context summary
+    skill is assigned to runtime agent version 2. Skill workflow fields are
+    declarative contracts, not the Phase 10 executable workflow engine.
 
 Other questions can remain open until their named phase.

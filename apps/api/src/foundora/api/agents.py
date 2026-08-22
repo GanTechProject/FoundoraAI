@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 
+from foundora.agents.schema import AgentSchemaError
 from foundora.agents.service import (
     AgentDashboard,
     AgentDefinitionRecord,
@@ -16,6 +17,8 @@ from foundora.agents.service import (
     AgentRunNotFound,
     AgentRunRecord,
     AgentService,
+    SkillDefinitionRecord,
+    SkillNotAssigned,
 )
 from foundora.api.auth import require_auth, require_csrf
 from foundora.auth.service import AuthContext
@@ -34,6 +37,8 @@ RunStatus = Literal[
 
 class CreateAgentRunRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=500)
+    skill_id: str | None = Field(default=None, min_length=1, max_length=80)
+    skill_input: dict[str, object] = Field(default_factory=dict)
 
     @field_validator("objective")
     @classmethod
@@ -66,6 +71,32 @@ class AgentDefinitionView(BaseModel):
     output_schema: dict[str, object]
     evaluation_criteria: list[str]
     escalation_criteria: list[str]
+    assigned_skills: list[AssignedSkillView]
+
+
+class AssignedSkillView(BaseModel):
+    skill_id: str
+    version_id: uuid.UUID
+    version: int
+
+
+class SkillDefinitionView(BaseModel):
+    skill_id: str
+    display_name: str
+    enabled: bool
+    version_id: uuid.UUID
+    version: int
+    description: str
+    compatible_agents: list[str]
+    prerequisites: list[str]
+    input_schema: dict[str, object]
+    output_schema: dict[str, object]
+    tool_requirements: list[str]
+    workflow: list[str]
+    permissions: list[str]
+    risk_class: str
+    test_fixtures: list[dict[str, object]]
+    evaluation_rubric: list[str]
 
 
 class AgentMessageView(BaseModel):
@@ -102,6 +133,9 @@ class AgentRunView(BaseModel):
     agent_id: str
     agent_version_id: uuid.UUID
     agent_version: int
+    skill_id: str | None
+    skill_version_id: uuid.UUID | None
+    skill_version: int | None
     status: RunStatus
     structured_input: dict[str, object]
     structured_output: dict[str, object] | None
@@ -121,6 +155,7 @@ class AgentRunView(BaseModel):
 class AgentDashboardView(BaseModel):
     business_id: uuid.UUID
     definitions: list[AgentDefinitionView]
+    skills: list[SkillDefinitionView]
     runs: list[AgentRunView]
 
 
@@ -149,6 +184,37 @@ def _definition_view(record: AgentDefinitionRecord) -> AgentDefinitionView:
         output_schema=version.output_schema,
         evaluation_criteria=version.evaluation_criteria,
         escalation_criteria=version.escalation_criteria,
+        assigned_skills=[
+            AssignedSkillView(
+                skill_id=skill.skill_id,
+                version_id=skill.id,
+                version=skill.version,
+            )
+            for skill in record.assigned_skills
+        ],
+    )
+
+
+def _skill_view(record: SkillDefinitionRecord) -> SkillDefinitionView:
+    skill = record.skill
+    version = record.version
+    return SkillDefinitionView(
+        skill_id=skill.id,
+        display_name=skill.display_name,
+        enabled=skill.enabled,
+        version_id=version.id,
+        version=version.version,
+        description=version.description,
+        compatible_agents=version.compatible_agents,
+        prerequisites=version.prerequisites,
+        input_schema=version.input_schema,
+        output_schema=version.output_schema,
+        tool_requirements=version.tool_requirements,
+        workflow=version.workflow,
+        permissions=version.permissions,
+        risk_class=version.risk_class,
+        test_fixtures=version.test_fixtures,
+        evaluation_rubric=version.evaluation_rubric,
     )
 
 
@@ -175,6 +241,9 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
         agent_id=run.agent_id,
         agent_version_id=run.agent_version_id,
         agent_version=record.version.version,
+        skill_id=(record.skill_version.skill_id if record.skill_version is not None else None),
+        skill_version_id=run.skill_version_id,
+        skill_version=(record.skill_version.version if record.skill_version is not None else None),
         status=run.status,  # type: ignore[arg-type]
         structured_input=run.structured_input,
         structured_output=run.structured_output,
@@ -210,6 +279,7 @@ def _dashboard_view(dashboard: AgentDashboard) -> AgentDashboardView:
     return AgentDashboardView(
         business_id=dashboard.business_id,
         definitions=[_definition_view(record) for record in dashboard.definitions],
+        skills=[_skill_view(record) for record in dashboard.skills],
         runs=[_run_view(record) for record in dashboard.runs],
     )
 
@@ -238,11 +308,30 @@ async def create_agent_run(
     context: Annotated[AuthContext, Depends(require_csrf)],
 ) -> AgentRunView:
     try:
-        record = await AgentService().create_run(context, agent_id, payload.objective)
+        record = await AgentService().create_run(
+            context,
+            agent_id,
+            payload.objective,
+            payload.skill_id,
+            payload.skill_input,
+        )
     except AgentNotFound as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Enabled agent definition not found",
+        ) from error
+    except SkillNotAssigned as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "skill_not_assigned",
+                "message": "The requested skill is not assigned to this agent version",
+            },
+        ) from error
+    except AgentSchemaError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_skill_input", "message": str(error)},
         ) from error
     except AgentQueueUnavailable as error:
         raise HTTPException(
