@@ -25,7 +25,8 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 7. Connected services entered during onboarding are founder declarations only. Provider credential validation and real connection state belong to their later provider phases.
 8. Phase 05 starts with OpenAI as primary, Gemini then Anthropic as fallbacks for
    explicitly standard-sensitivity requests. The founder configured OpenAI and
-   Gemini locally; Anthropic remains cleanly disabled until a key is supplied.
+   Gemini locally; `gpt-4o-mini` is the tested OpenAI default, and Anthropic
+   remains cleanly disabled until a key is supplied.
    Per-request defaults are 512 output tokens, 8,192 total tokens, and $0.10
    estimated cost, with a hard 4,096 output-token ceiling. Later policy phases may
    add action/day/provider budgets without bypassing these gateway limits.

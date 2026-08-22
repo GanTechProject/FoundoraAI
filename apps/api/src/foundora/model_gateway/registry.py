@@ -11,9 +11,9 @@ from foundora.model_gateway.types import ModelProvider, ModelSpec, ProviderName
 MODEL_REGISTRY: tuple[ModelSpec, ...] = (
     ModelSpec(
         provider="openai",
-        model="gpt-5.6-luna",
-        input_microusd_per_token=Decimal("0.20"),
-        output_microusd_per_token=Decimal("1.20"),
+        model="gpt-4o-mini",
+        input_microusd_per_token=Decimal("0.15"),
+        output_microusd_per_token=Decimal("0.60"),
     ),
     ModelSpec(
         provider="gemini",

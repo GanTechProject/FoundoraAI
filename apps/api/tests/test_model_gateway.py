@@ -125,7 +125,7 @@ def test_missing_keys_disable_every_provider_without_placeholder_output() -> Non
 async def test_gateway_falls_back_and_persists_each_attempt() -> None:
     openai = FakeProvider(
         "openai",
-        "gpt-5.6-luna",
+        "gpt-4o-mini",
         [
             ProviderFailure(
                 "openai",
@@ -154,7 +154,7 @@ async def test_gateway_falls_back_and_persists_each_attempt() -> None:
 
 @pytest.mark.asyncio
 async def test_sensitive_request_cannot_enable_cross_provider_fallback() -> None:
-    openai = FakeProvider("openai", "gpt-5.6-luna", [])
+    openai = FakeProvider("openai", "gpt-4o-mini", [])
     gemini = FakeProvider("gemini", "gemini-3.6-flash", [])
     anthropic = FakeProvider("anthropic", "claude-haiku-4-5-20251001", [])
     gateway = RecordingGateway(settings(), providers(openai, gemini, anthropic))
@@ -167,7 +167,7 @@ async def test_sensitive_request_cannot_enable_cross_provider_fallback() -> None
 
 @pytest.mark.asyncio
 async def test_task_route_does_not_cross_provider_without_fallback_permission() -> None:
-    openai = FakeProvider("openai", "gpt-5.6-luna", [response("must not run", "gpt-5.6-luna")])
+    openai = FakeProvider("openai", "gpt-4o-mini", [response("must not run", "gpt-4o-mini")])
     gemini = FakeProvider(
         "gemini",
         "gemini-3.6-flash",
@@ -201,7 +201,7 @@ async def test_task_route_does_not_cross_provider_without_fallback_permission() 
 
 @pytest.mark.asyncio
 async def test_budget_is_rejected_before_provider_execution() -> None:
-    openai = FakeProvider("openai", "gpt-5.6-luna", [])
+    openai = FakeProvider("openai", "gpt-4o-mini", [])
     gemini = FakeProvider("gemini", "gemini-3.6-flash", [], configured=False)
     anthropic = FakeProvider("anthropic", "claude-haiku-4-5-20251001", [], configured=False)
     gateway = RecordingGateway(settings(), providers(openai, gemini, anthropic))
@@ -216,8 +216,8 @@ async def test_budget_is_rejected_before_provider_execution() -> None:
 async def test_streaming_records_final_usage() -> None:
     openai = FakeProvider(
         "openai",
-        "gpt-5.6-luna",
-        [response("streamed result", "gpt-5.6-luna")],
+        "gpt-4o-mini",
+        [response("streamed result", "gpt-4o-mini")],
     )
     gemini = FakeProvider("gemini", "gemini-3.6-flash", [], configured=False)
     anthropic = FakeProvider("anthropic", "claude-haiku-4-5-20251001", [], configured=False)
@@ -229,15 +229,15 @@ async def test_streaming_records_final_usage() -> None:
     assert events[-1].data["output_tokens"] == 4
     assert gateway.records[0]["status"] == "succeeded"
     assert gateway.records[0]["streamed"] is True
-    assert gateway.records[0]["response"] == response("streamed result", "gpt-5.6-luna")
+    assert gateway.records[0]["response"] == response("streamed result", "gpt-4o-mini")
 
 
 @pytest.mark.asyncio
 async def test_invalid_structured_output_keeps_billed_usage() -> None:
     openai = FakeProvider(
         "openai",
-        "gpt-5.6-luna",
-        [response("not-json", "gpt-5.6-luna")],
+        "gpt-4o-mini",
+        [response("not-json", "gpt-4o-mini")],
     )
     gemini = FakeProvider("gemini", "gemini-3.6-flash", [], configured=False)
     anthropic = FakeProvider("anthropic", "claude-haiku-4-5-20251001", [], configured=False)
@@ -250,7 +250,7 @@ async def test_invalid_structured_output_keeps_billed_usage() -> None:
         )
 
     assert gateway.records[0]["status"] == "failed"
-    assert gateway.records[0]["response"] == response("not-json", "gpt-5.6-luna")
+    assert gateway.records[0]["response"] == response("not-json", "gpt-4o-mini")
     assert cast(int, gateway.records[0]["cost"]) > 0
 
 
@@ -258,10 +258,10 @@ async def test_invalid_structured_output_keeps_billed_usage() -> None:
 async def test_retry_rechecks_shared_budget_after_billed_failure() -> None:
     openai = FakeProvider(
         "openai",
-        "gpt-5.6-luna",
+        "gpt-4o-mini",
         [
-            response("not-json", "gpt-5.6-luna"),
-            response('{"ok":true}', "gpt-5.6-luna"),
+            response("not-json", "gpt-4o-mini"),
+            response('{"ok":true}', "gpt-4o-mini"),
         ],
     )
     gemini = FakeProvider("gemini", "gemini-3.6-flash", [], configured=False)
@@ -293,7 +293,7 @@ async def test_openai_adapter_uses_responses_api_and_parses_usage() -> None:
         return httpx.Response(
             200,
             json={
-                "model": "gpt-5.6-luna",
+                "model": "gpt-4o-mini",
                 "output": [{"content": [{"type": "output_text", "text": '{"ok":true}'}]}],
                 "usage": {"input_tokens": 11, "output_tokens": 5},
             },
@@ -301,7 +301,7 @@ async def test_openai_adapter_uses_responses_api_and_parses_usage() -> None:
 
     provider = OpenAIProvider(
         "test-key",
-        "gpt-5.6-luna",
+        "gpt-4o-mini",
         5,
         transport=httpx.MockTransport(handler),
     )
@@ -392,7 +392,7 @@ async def test_openai_streaming_emits_delta_and_final_usage() -> None:
             [
                 'data: {"type":"response.output_text.delta","delta":"hello"}',
                 'data: {"type":"response.completed","response":'
-                '{"model":"gpt-5.6-luna","output":[{"content":'
+                '{"model":"gpt-4o-mini","output":[{"content":'
                 '[{"type":"output_text","text":"hello"}]}],'
                 '"usage":{"input_tokens":7,"output_tokens":2}}}',
                 "data: [DONE]",
@@ -402,7 +402,7 @@ async def test_openai_streaming_emits_delta_and_final_usage() -> None:
 
     provider = OpenAIProvider(
         "test-key",
-        "gpt-5.6-luna",
+        "gpt-4o-mini",
         5,
         transport=httpx.MockTransport(handler),
     )

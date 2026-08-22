@@ -78,7 +78,7 @@ For a selected business, open `/onboarding` from the workspace. The wizard recor
 
 Open `/settings/ai` to inspect configured providers, validate their selected models, review routing and the governed price registry, run a tightly budgeted live check, and inspect business-scoped usage. Credentials are optional server environment variables: `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `ANTHROPIC_API_KEY`. A missing credential disables its provider without mock output. Prompts and model output are not persisted; attempt metadata records tokens, estimated micro-USD cost, latency, retry/fallback lineage, and sanitized failures.
 
-The default route is OpenAI, followed by Gemini and Anthropic fallback for explicitly standard-sensitivity requests. Sensitive requests cannot cross providers. Defaults can be changed with the `FOUNDORA_MODEL_*` variables listed in `.env.example`, but model identifiers remain constrained to the code-reviewed registry. Current registry pricing and its review date are documented in `docs/phase-05-model-gateway.md`.
+The default route is OpenAI `gpt-4o-mini`, followed by Gemini and Anthropic fallback for explicitly standard-sensitivity requests. Sensitive requests cannot cross providers. Defaults can be changed with the `FOUNDORA_MODEL_*` variables listed in `.env.example`, but model identifiers remain constrained to the code-reviewed registry. Current registry pricing and its review date are documented in `docs/phase-05-model-gateway.md`.
 
 Open `/brain` for the selected business's unified context. The builder exposes an
 explicit purpose, token ceiling, and source selection, then shows every source's

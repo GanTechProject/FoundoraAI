@@ -51,7 +51,7 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("FOUNDORA_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
     )
-    openai_model: str = "gpt-5.6-luna"
+    openai_model: str = "gpt-4o-mini"
     gemini_model: str = "gemini-3.6-flash"
     anthropic_model: str = "claude-haiku-4-5-20251001"
 

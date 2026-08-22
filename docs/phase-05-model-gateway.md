@@ -48,7 +48,7 @@ documentation on 2026-08-22:
 
 | Provider | Model | Input / 1M tokens | Output / 1M tokens |
 |---|---|---:|---:|
-| OpenAI | `gpt-5.6-luna` | $0.20 | $1.20 |
+| OpenAI | `gpt-4o-mini` | $0.15 | $0.60 |
 | Gemini | `gemini-3.6-flash` | $0.75 | $3.75 |
 | Anthropic | `claude-haiku-4-5-20251001` | $1.00 | $5.00 |
 
@@ -65,12 +65,13 @@ formats, structured output, streaming usage, missing keys, fallback, preflight
 budgets, and failed structured-output accounting.
 
 The smoke suite checks OpenAI and Gemini against their real configured model
-endpoints. On the acceptance run, Gemini validated successfully; the supplied
-OpenAI credential was rejected with HTTP 401 and its sanitized invalid outcome was
-persisted. The suite proves Anthropic is cleanly disabled without a key, then makes
-one fixed non-sensitive generation with a 32-token ceiling and a $0.002 cost
-ceiling. The invalid OpenAI primary falls back to Gemini, and the successful usage
-row is verified in PostgreSQL. The suite also rejects unauthenticated, missing-CSRF,
+endpoints. `gpt-4o-mini` completed a direct Responses API capability check, while
+the currently supplied OpenAI credential later returned HTTP 401 during the
+containerized acceptance run; that sanitized invalid outcome is persisted.
+Gemini validates successfully, and Anthropic is cleanly disabled without a key.
+The suite makes one fixed non-sensitive generation with a 32-token ceiling and a
+$0.002 cost ceiling, requires invalid-primary fallback to Gemini, and verifies the
+successful usage row in PostgreSQL. It also rejects unauthenticated, missing-CSRF,
 under-budgeted, and sensitive-fallback requests and renders the protected gateway
 dashboard. Temporary state is removed in `finally`; real keys are neither printed
 nor persisted.
