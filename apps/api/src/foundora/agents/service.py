@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from redis import Redis
 from rq import Queue
+from rq.job import JobStatus
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -94,7 +95,12 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _enqueue_sync(run_id: uuid.UUID) -> None:
+def _agent_job_id(run_id: uuid.UUID, worker_recovery_count: int) -> str:
+    base = f"agent-run-{run_id}"
+    return base if worker_recovery_count == 0 else f"{base}-recovery-{worker_recovery_count}"
+
+
+def _enqueue_sync(run_id: uuid.UUID, worker_recovery_count: int = 0) -> None:
     settings = get_settings()
     connection = Redis.from_url(
         settings.redis_url,
@@ -103,10 +109,23 @@ def _enqueue_sync(run_id: uuid.UUID) -> None:
         socket_timeout=5,
     )
     try:
-        Queue(settings.worker_queue, connection=connection).enqueue(
+        queue = Queue(settings.worker_queue, connection=connection)
+        job_id = _agent_job_id(run_id, worker_recovery_count)
+        existing = queue.fetch_job(job_id)
+        if existing is not None:
+            active_statuses = {
+                JobStatus.QUEUED,
+                JobStatus.STARTED,
+                JobStatus.DEFERRED,
+                JobStatus.SCHEDULED,
+            }
+            if existing.get_status(refresh=True) in active_statuses:
+                return
+            existing.delete(remove_from_queue=True)
+        queue.enqueue(
             "foundora.agents.jobs.execute_agent_run",
             str(run_id),
-            job_id=f"agent-run-{run_id}",
+            job_id=job_id,
             job_timeout=300,
             result_ttl=0,
             failure_ttl=86_400,
@@ -335,6 +354,7 @@ class AgentService:
             model_operation_id=None,
             error_type=None,
             error_message=None,
+            worker_recovery_count=0,
             created_at=now,
             queued_at=now,
             started_at=None,

@@ -1,21 +1,43 @@
-name: Foundora quality and smoke gates
+name: Foundora verification gates
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  deterministic:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Validate, test, build, and smoke test
+      - name: Validate, test, build, migrate, and check local runtime
         shell: pwsh
-        run: ./scripts/verify.ps1
+        run: ./scripts/ci.ps1
+      - name: Show service logs after a failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop local services
+        if: always()
+        run: docker compose down --volumes
+
+  live-providers:
+    if: github.event_name == 'workflow_dispatch'
+    needs: deterministic
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run opt-in live-provider acceptance
+        shell: pwsh
+        run: ./scripts/smoke.ps1
       - name: Show service logs after a failure
         if: failure()
         run: docker compose logs --no-color

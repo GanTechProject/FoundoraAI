@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
+from jsonschema import SchemaError
+from jsonschema import ValidationError as JsonSchemaValidationError
+from jsonschema.validators import validator_for
+from referencing.exceptions import Unresolvable
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -34,6 +38,10 @@ from foundora.model_gateway.types import (
 from foundora.models import ModelGatewayCall, ModelProviderValidation
 
 logger = logging.getLogger(__name__)
+
+
+class StructuredOutputInvalid(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -104,6 +112,21 @@ def _prompt_token_upper_bound(request: GatewayRequest) -> int:
     if request.json_schema is not None:
         values.append(json.dumps(request.json_schema, separators=(",", ":"), sort_keys=True))
     return sum(len(value.encode("utf-8")) for value in values) + 256
+
+
+def _validate_structured_output(text: str, schema: dict[str, object]) -> None:
+    try:
+        value = json.loads(text)
+        validator_type = validator_for(schema)
+        validator_type.check_schema(schema)
+        validator_type(schema).validate(value)
+    except (
+        json.JSONDecodeError,
+        JsonSchemaValidationError,
+        SchemaError,
+        Unresolvable,
+    ) as error:
+        raise StructuredOutputInvalid from error
 
 
 class ModelGateway:
@@ -287,12 +310,15 @@ class ModelGateway:
                     )
                     if request.json_schema is not None:
                         try:
-                            json.loads(response.text)
-                        except json.JSONDecodeError as error:
+                            _validate_structured_output(response.text, request.json_schema)
+                        except StructuredOutputInvalid as error:
                             raise ProviderFailure(
                                 candidate.provider.name,
                                 "structured_output_invalid",
-                                "Provider returned invalid structured output",
+                                (
+                                    "Provider returned invalid structured output for the "
+                                    "requested schema"
+                                ),
                                 retryable=True,
                             ) from error
                     latency_ms = round((time.perf_counter() - started) * 1000)
@@ -436,6 +462,7 @@ class ModelGateway:
                 started_at = _now()
                 started = time.perf_counter()
                 emitted = False
+                recorded = False
                 completed: ProviderResponse | None = None
                 try:
                     async for event in candidate.provider.stream(
@@ -459,7 +486,18 @@ class ModelGateway:
                             retryable=False,
                         )
                     if request.json_schema is not None:
-                        json.loads(completed.text)
+                        try:
+                            _validate_structured_output(completed.text, request.json_schema)
+                        except StructuredOutputInvalid as error:
+                            raise ProviderFailure(
+                                candidate.provider.name,
+                                "structured_output_invalid",
+                                (
+                                    "Provider returned invalid structured output for the "
+                                    "requested schema"
+                                ),
+                                retryable=False,
+                            ) from error
                     latency_ms = round((time.perf_counter() - started) * 1000)
                     cost = model_spec(candidate.provider.name, candidate.model).cost_microusd(
                         completed.input_tokens, completed.output_tokens
@@ -488,6 +526,7 @@ class ModelGateway:
                         error=None,
                         started_at=started_at,
                     )
+                    recorded = True
                     yield GatewayStreamEvent(
                         kind="done",
                         data={
@@ -501,22 +540,53 @@ class ModelGateway:
                         },
                     )
                     return
-                except (ProviderFailure, BudgetExceeded, json.JSONDecodeError) as raw_error:
+                except asyncio.CancelledError:
+                    if not recorded:
+                        failure = ProviderFailure(
+                            candidate.provider.name,
+                            "client_stream_cancelled",
+                            "Client disconnected before the provider stream completed",
+                            retryable=False,
+                        )
+                        latency_ms = round((time.perf_counter() - started) * 1000)
+                        cost = (
+                            model_spec(candidate.provider.name, candidate.model).cost_microusd(
+                                completed.input_tokens, completed.output_tokens
+                            )
+                            if completed is not None
+                            else 0
+                        )
+                        try:
+                            await self._record_call(
+                                operation_id=operation_id,
+                                business_id=business_id,
+                                request=request,
+                                candidate=candidate,
+                                status="failed",
+                                attempt_number=attempt_number,
+                                retry_number=retry_number,
+                                fallback_from=previous_provider,
+                                streamed=True,
+                                response=completed,
+                                cost=cost,
+                                latency_ms=latency_ms,
+                                error=failure,
+                                started_at=started_at,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Cancelled model stream could not persist attempt evidence",
+                                extra={"event": "model_gateway.stream.cancel_record_failed"},
+                            )
+                    raise
+                except (ProviderFailure, BudgetExceeded) as raw_error:
                     failure = (
                         raw_error
                         if isinstance(raw_error, ProviderFailure)
                         else ProviderFailure(
                             candidate.provider.name,
-                            (
-                                raw_error.code
-                                if isinstance(raw_error, BudgetExceeded)
-                                else "structured_output_invalid"
-                            ),
-                            (
-                                str(raw_error)
-                                if isinstance(raw_error, BudgetExceeded)
-                                else "Provider returned invalid structured output"
-                            ),
+                            raw_error.code,
+                            str(raw_error),
                             retryable=False,
                         )
                     )

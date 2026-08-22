@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from foundora.auth.service import AuthContext
@@ -93,6 +93,9 @@ class TaskDashboard:
     goals: list[BusinessGoal]
     agent_owners: list[AgentOwner]
     tasks: list[TaskRecord]
+    total_tasks: int
+    limit: int
+    offset: int
 
 
 def _now() -> datetime:
@@ -108,7 +111,9 @@ class TaskService:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
         self._session_factory = session_factory or get_session_factory()
 
-    async def dashboard(self, context: AuthContext) -> TaskDashboard:
+    async def dashboard(
+        self, context: AuthContext, *, limit: int = 100, offset: int = 0
+    ) -> TaskDashboard:
         async with self._session_factory() as database:
             business = await resolve_selected_business(database, context)
             goals = list(
@@ -137,9 +142,17 @@ class TaskService:
                     select(Task)
                     .where(Task.business_id == business.id)
                     .order_by(Task.priority, Task.due_at.asc().nulls_last(), Task.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
                 )
             )
-            records = await self._records(database, tasks)
+            total_tasks = int(
+                await database.scalar(
+                    select(func.count(Task.id)).where(Task.business_id == business.id)
+                )
+                or 0
+            )
+            records = await self._records(database, tasks, include_events=False)
         return TaskDashboard(
             business_id=business.id,
             goals=goals,
@@ -147,6 +160,9 @@ class TaskService:
                 AgentOwner(agent=agent, version=version) for agent, version in owner_rows
             ],
             tasks=records,
+            total_tasks=total_tasks,
+            limit=limit,
+            offset=offset,
         )
 
     async def inspect(self, context: AuthContext, task_id: uuid.UUID) -> TaskRecord:
@@ -410,36 +426,67 @@ class TaskService:
                 pending.extend(outgoing.get(current, []))
         return False
 
-    async def _records(self, database: AsyncSession, tasks: list[Task]) -> list[TaskRecord]:
-        return [await self._record(database, task) for task in tasks]
+    async def _records(
+        self,
+        database: AsyncSession,
+        tasks: list[Task],
+        *,
+        include_events: bool = True,
+    ) -> list[TaskRecord]:
+        if not tasks:
+            return []
+        task_ids = [task.id for task in tasks]
+        owner_version_ids = {
+            task.owner_agent_version_id for task in tasks if task.owner_agent_version_id is not None
+        }
+        owner_versions = (
+            list(
+                await database.scalars(
+                    select(AgentVersion).where(AgentVersion.id.in_(owner_version_ids))
+                )
+            )
+            if owner_version_ids
+            else []
+        )
+        owners_by_id = {version.id: version for version in owner_versions}
+        dependency_rows = (
+            await database.execute(
+                select(TaskDependency.task_id, Task)
+                .join(Task, Task.id == TaskDependency.depends_on_task_id)
+                .where(TaskDependency.task_id.in_(task_ids))
+                .order_by(TaskDependency.task_id, Task.priority, Task.created_at)
+            )
+        ).all()
+        dependencies_by_task: dict[uuid.UUID, list[Task]] = {task_id: [] for task_id in task_ids}
+        for task_id, dependency in dependency_rows:
+            dependencies_by_task[task_id].append(dependency)
+        events_by_task: dict[uuid.UUID, list[TaskEvent]] = {task_id: [] for task_id in task_ids}
+        if include_events:
+            events = list(
+                await database.scalars(
+                    select(TaskEvent)
+                    .where(TaskEvent.task_id.in_(task_ids))
+                    .order_by(TaskEvent.task_id, TaskEvent.created_at, TaskEvent.id)
+                )
+            )
+            for event in events:
+                events_by_task[event.task_id].append(event)
+        return [
+            TaskRecord(
+                task=task,
+                dependencies=dependencies_by_task[task.id],
+                events=events_by_task[task.id],
+                owner_version=(
+                    owners_by_id.get(task.owner_agent_version_id)
+                    if task.owner_agent_version_id is not None
+                    else None
+                ),
+            )
+            for task in tasks
+        ]
 
     async def _record(self, database: AsyncSession, task: Task) -> TaskRecord:
-        owner_version = (
-            await database.get(AgentVersion, task.owner_agent_version_id)
-            if task.owner_agent_version_id is not None
-            else None
-        )
-        dependencies = list(
-            await database.scalars(
-                select(Task)
-                .join(TaskDependency, Task.id == TaskDependency.depends_on_task_id)
-                .where(TaskDependency.task_id == task.id)
-                .order_by(Task.priority, Task.created_at)
-            )
-        )
-        events = list(
-            await database.scalars(
-                select(TaskEvent)
-                .where(TaskEvent.task_id == task.id)
-                .order_by(TaskEvent.created_at, TaskEvent.id)
-            )
-        )
-        return TaskRecord(
-            task=task,
-            dependencies=dependencies,
-            events=events,
-            owner_version=owner_version,
-        )
+        return (await self._records(database, [task]))[0]
 
     @staticmethod
     def _event(

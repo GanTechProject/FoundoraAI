@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from foundora.auth.service import _idle_refresh_interval
 from foundora.config import Settings
 
 
@@ -38,6 +39,11 @@ def test_production_requires_https_and_secure_cookies() -> None:
 def test_session_idle_timeout_cannot_exceed_absolute_timeout() -> None:
     with pytest.raises(ValidationError):
         Settings(session_idle_minutes=60, session_absolute_minutes=30)
+
+
+def test_session_refresh_interval_adapts_to_short_idle_timeout() -> None:
+    assert _idle_refresh_interval(Settings(session_idle_minutes=1)).total_seconds() == 30
+    assert _idle_refresh_interval(Settings(session_idle_minutes=30)).total_seconds() == 300
 
 
 def test_provider_keys_accept_standard_names_and_stay_masked() -> None:

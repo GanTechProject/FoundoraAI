@@ -15,6 +15,7 @@ from foundora.models import Owner, OwnerSession, Task, TaskEvent
 from foundora.tasks.service import (
     DependencyViolation,
     InvalidTaskTransition,
+    TaskDashboard,
     TaskRecord,
     ensure_transition,
 )
@@ -182,3 +183,32 @@ def test_task_read_requires_authentication() -> None:
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 422
+
+
+def test_task_dashboard_forwards_bounded_pagination() -> None:
+    context, record = records()
+    dashboard = TaskDashboard(
+        business_id=record.task.business_id,
+        goals=[],
+        agent_owners=[],
+        tasks=[record],
+        total_tasks=250,
+        limit=25,
+        offset=50,
+    )
+    app.dependency_overrides[require_auth] = lambda: context
+    try:
+        with (
+            patch(
+                "foundora.api.tasks.TaskService.dashboard",
+                new=AsyncMock(return_value=dashboard),
+            ) as load,
+            TestClient(app) as client,
+        ):
+            response = client.get("/tasks?limit=25&offset=50")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["total_tasks"] == 250
+    load.assert_awaited_once_with(context, limit=25, offset=50)

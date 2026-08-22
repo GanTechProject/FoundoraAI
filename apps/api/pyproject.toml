@@ -12,6 +12,7 @@ dependencies = [
   "asyncpg==0.31.0",
   "fastapi==0.141.1",
   "httpx==0.28.1",
+  "jsonschema==4.26.0",
   "pydantic-settings==2.15.0",
   "pwdlib[argon2]==0.3.0",
   "redis==8.1.0",
@@ -27,6 +28,7 @@ dev = [
   "pytest==9.1.1",
   "pytest-asyncio==1.4.0",
   "ruff==0.16.4",
+  "types-jsonschema==4.26.0.20260518",
 ]
 
 [tool.setuptools.packages.find]

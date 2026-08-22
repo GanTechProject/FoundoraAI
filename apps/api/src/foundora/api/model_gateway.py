@@ -9,6 +9,8 @@ from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
+from jsonschema import SchemaError
+from jsonschema.validators import validator_for
 from pydantic import BaseModel, Field, field_validator
 
 from foundora.api.auth import require_auth, require_csrf
@@ -76,6 +78,10 @@ class GenerateRequest(BaseModel):
             raise ValueError("json_schema exceeds 16 KiB")
         if value.get("type") not in {"object", "array"}:
             raise ValueError("json_schema root type must be object or array")
+        try:
+            validator_for(value).check_schema(value)
+        except SchemaError as error:
+            raise ValueError("json_schema is not a valid JSON Schema") from error
         return value
 
 

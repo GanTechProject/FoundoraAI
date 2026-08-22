@@ -8,31 +8,32 @@ No deployment provider has been selected. The application contains no AWS-, Azur
 
 Docker Desktop running Linux containers and Docker Compose are required. Do not substitute ad-hoc host services. The verified development toolchain is:
 
-| Runtime | Exact version |
-|---|---:|
-| Docker Engine | 29.7.2 |
-| Docker Compose | 5.4.0 |
-| Node.js | 24.19.0 LTS |
-| npm | 11.17.0 |
-| Python | 3.13.15 |
-| PostgreSQL | 18.6 |
-| Redis Open Source | 8.2.8 |
+| Runtime           | Exact version |
+| ----------------- | ------------: |
+| Docker Engine     |        29.7.2 |
+| Docker Compose    |         5.4.0 |
+| Node.js           |   24.19.0 LTS |
+| npm               |       11.17.0 |
+| Python            |       3.13.15 |
+| PostgreSQL        |          18.6 |
+| Redis Open Source |         8.2.8 |
 
 Application dependencies are exactly pinned in `package-lock.json`, `apps/web/package.json`, `apps/api/pyproject.toml`, and the Python production/development lock files under `apps/api/`. Container image tags are pinned in the Dockerfiles and `compose.yaml`.
 
-| Core package | Exact version |
-|---|---:|
-| Next.js | 16.3.2 |
-| React / React DOM | 19.2.8 |
-| TypeScript | 6.0.3 |
-| FastAPI | 0.141.1 |
-| SQLAlchemy | 2.0.52 |
-| Alembic | 1.19.1 |
-| redis-py | 8.1.0 |
-| RQ | 2.11.0 |
-| pwdlib | 0.3.0 |
-| argon2-cffi | 25.1.0 |
-| HTTPX | 0.28.1 |
+| Core package      | Exact version |
+| ----------------- | ------------: |
+| Next.js           |        16.3.2 |
+| React / React DOM |        19.2.8 |
+| TypeScript        |         6.0.3 |
+| FastAPI           |       0.141.1 |
+| SQLAlchemy        |        2.0.52 |
+| Alembic           |        1.19.1 |
+| redis-py          |         8.1.0 |
+| RQ                |        2.11.0 |
+| pwdlib            |         0.3.0 |
+| argon2-cffi       |        25.1.0 |
+| HTTPX             |        0.28.1 |
+| jsonschema        |        4.26.0 |
 
 Version selection was verified on 2026-08-22 against the official [Node.js release table](https://nodejs.org/en/about/previous-releases), [Python 3.13.15 release](https://www.python.org/downloads/release/python-31315/), [PostgreSQL version policy](https://www.postgresql.org/support/versioning/), [Redis 8.2 release notes](https://redis.io/docs/latest/operate/oss_and_stack/stack-with-enterprise/release-notes/redisce/redisos-8.2-release-notes/), and [Next.js release blog](https://nextjs.org/blog).
 
@@ -105,7 +106,7 @@ dependency blockers, retry budget, and append-only events. A task cannot be queu
 or run until all dependencies are complete; dependency cycles and cross-business
 references are rejected. Failed-task retry is bounded and idempotent. This phase
 records queued work but does not execute a workflow or grant an approval. The
-schema head is `20260822_08`.
+schema head is `20260823_09`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -126,6 +127,11 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ```
 
 The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, and task persistence/dependency/retry smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phase 09 itself makes no provider call. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+
+Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
+build, migration, health, and process gates without requiring or billing external
+model providers. Live-provider acceptance is an explicit manual GitHub Actions
+job and receives provider credentials only from repository secrets.
 
 ## Repository shape
 

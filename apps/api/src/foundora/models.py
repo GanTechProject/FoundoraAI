@@ -297,6 +297,10 @@ class AgentRun(Base):
         ),
         Index("ix_agent_runs_business_created", "business_id", "created_at"),
         Index("ix_agent_runs_business_status", "business_id", "status"),
+        CheckConstraint(
+            "worker_recovery_count BETWEEN 0 AND 3",
+            name="ck_agent_runs_worker_recovery_count",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -316,6 +320,7 @@ class AgentRun(Base):
     model_operation_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, index=True)
     error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    worker_recovery_count: Mapped[int] = mapped_column(SmallInteger, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -476,6 +481,11 @@ class ModelGatewayCall(Base):
         ),
         Index("ix_model_gateway_calls_business_created", "business_id", "created_at"),
         Index("ix_model_gateway_calls_operation_attempt", "operation_id", "attempt_number"),
+        UniqueConstraint(
+            "operation_id",
+            "attempt_number",
+            name="uq_model_gateway_calls_operation_attempt",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)

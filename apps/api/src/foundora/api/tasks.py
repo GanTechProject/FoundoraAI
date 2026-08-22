@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from foundora.api.auth import require_auth, require_csrf
@@ -153,6 +153,9 @@ class TaskDashboardView(BaseModel):
     goals: list[GoalSummaryView]
     agent_owners: list[AgentOwnerView]
     tasks: list[TaskView]
+    total_tasks: int
+    limit: int
+    offset: int
 
 
 def _task_view(record: TaskRecord) -> TaskView:
@@ -222,6 +225,9 @@ def _dashboard_view(record: TaskDashboard) -> TaskDashboardView:
             for owner in record.agent_owners
         ],
         tasks=[_task_view(task) for task in record.tasks],
+        total_tasks=record.total_tasks,
+        limit=record.limit,
+        offset=record.offset,
     )
 
 
@@ -238,10 +244,13 @@ def _dependency(error: DependencyViolation) -> HTTPException:
 
 @router.get("", response_model=TaskDashboardView)
 async def task_dashboard(
-    context: Annotated[AuthContext, Depends(require_auth)], response: Response
+    context: Annotated[AuthContext, Depends(require_auth)],
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
 ) -> TaskDashboardView:
     response.headers["Cache-Control"] = "no-store"
-    return _dashboard_view(await TaskService().dashboard(context))
+    return _dashboard_view(await TaskService().dashboard(context, limit=limit, offset=offset))
 
 
 @router.get("/{task_id}", response_model=TaskView)

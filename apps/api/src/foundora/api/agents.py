@@ -142,6 +142,7 @@ class AgentRunView(BaseModel):
     model_operation_id: uuid.UUID | None
     error_type: str | None
     error_message: str | None
+    worker_recovery_count: int
     created_at: datetime
     queued_at: datetime
     started_at: datetime | None
@@ -250,6 +251,7 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
         model_operation_id=run.model_operation_id,
         error_type=run.error_type,
         error_message=run.error_message,
+        worker_recovery_count=run.worker_recovery_count,
         created_at=run.created_at,
         queued_at=run.queued_at,
         started_at=run.started_at,

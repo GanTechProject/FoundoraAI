@@ -54,6 +54,10 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _idle_refresh_interval(settings: Settings) -> timedelta:
+    return timedelta(seconds=min(300, settings.session_idle_minutes * 30))
+
+
 class AuthService:
     def __init__(
         self,
@@ -147,7 +151,7 @@ class AuthService:
                     owner_session.revoked_at = now
                     await database.commit()
                 return None
-            if owner_session.last_seen_at <= now - timedelta(minutes=5):
+            if owner_session.last_seen_at <= now - _idle_refresh_interval(self._settings):
                 owner_session.last_seen_at = now
                 owner_session.idle_expires_at = min(
                     owner_session.expires_at,

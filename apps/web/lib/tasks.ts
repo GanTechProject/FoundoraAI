@@ -56,6 +56,9 @@ export interface FoundoraTask {
 
 export interface TaskDashboard {
   business_id: string;
+  total_tasks: number;
+  limit: number;
+  offset: number;
   goals: Array<{
     id: string;
     title: string;
@@ -95,6 +98,9 @@ function isDashboard(value: unknown): value is TaskDashboard {
     Array.isArray(item.goals) &&
     Array.isArray(item.agent_owners) &&
     Array.isArray(item.tasks) &&
+    typeof item.total_tasks === "number" &&
+    typeof item.limit === "number" &&
+    typeof item.offset === "number" &&
     item.tasks.every(isTask)
   );
 }

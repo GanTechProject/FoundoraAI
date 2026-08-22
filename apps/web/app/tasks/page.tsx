@@ -189,6 +189,9 @@ export default async function TasksPage({
           <section className="panel" aria-labelledby="task-ledger-heading">
             <p className="eyebrow">SELECTED-BUSINESS LEDGER</p>
             <h2 id="task-ledger-heading">Tasks by priority and due date</h2>
+            <p className="fine-print">
+              Showing {dashboard.tasks.length} of {dashboard.total_tasks} tasks.
+            </p>
             {dashboard.tasks.length ? (
               <div className="table-wrap">
                 <table>

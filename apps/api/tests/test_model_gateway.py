@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -252,6 +253,88 @@ async def test_invalid_structured_output_keeps_billed_usage() -> None:
     assert gateway.records[0]["status"] == "failed"
     assert gateway.records[0]["response"] == response("not-json", "gpt-4o-mini")
     assert cast(int, gateway.records[0]["cost"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_valid_json_that_violates_schema_is_rejected() -> None:
+    openai = FakeProvider(
+        "openai",
+        "gpt-4o-mini",
+        [response("{}", "gpt-4o-mini")],
+    )
+    gemini = FakeProvider("gemini", "gemini-3.6-flash", [], configured=False)
+    anthropic = FakeProvider("anthropic", "claude-haiku-4-5-20251001", [], configured=False)
+    gateway = RecordingGateway(settings(model_max_retries=0), providers(openai, gemini, anthropic))
+
+    with pytest.raises(ProviderFailure, match="invalid structured output"):
+        await gateway.generate(
+            uuid.uuid4(),
+            request(
+                allow_fallback=False,
+                json_schema={
+                    "type": "object",
+                    "required": ["answer"],
+                    "properties": {"answer": {"type": "string"}},
+                },
+            ),
+        )
+
+    assert gateway.records[0]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_unresolvable_structured_output_reference_is_safely_rejected() -> None:
+    openai = FakeProvider(
+        "openai",
+        "gpt-4o-mini",
+        [response('{"answer":"okay"}', "gpt-4o-mini")],
+    )
+    gemini = FakeProvider("gemini", "gemini-3.6-flash", [], configured=False)
+    anthropic = FakeProvider("anthropic", "claude-haiku-4-5-20251001", [], configured=False)
+    gateway = RecordingGateway(settings(model_max_retries=0), providers(openai, gemini, anthropic))
+
+    with pytest.raises(ProviderFailure, match="invalid structured output"):
+        await gateway.generate(
+            uuid.uuid4(),
+            request(
+                allow_fallback=False,
+                json_schema={
+                    "type": "object",
+                    "properties": {"answer": {"$ref": "https://invalid.example/schema"}},
+                },
+            ),
+        )
+
+    assert gateway.records[0]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_stream_persists_failed_attempt() -> None:
+    release = asyncio.Event()
+
+    class BlockingProvider(FakeProvider):
+        async def stream(self, request: ProviderRequest) -> AsyncIterator[ProviderStreamEvent]:
+            self.requests.append(request)
+            yield ProviderStreamEvent(kind="delta", delta="partial")
+            await release.wait()
+
+    openai = BlockingProvider("openai", "gpt-4o-mini", [])
+    gemini = FakeProvider("gemini", "gemini-3.6-flash", [], configured=False)
+    anthropic = FakeProvider("anthropic", "claude-haiku-4-5-20251001", [], configured=False)
+    gateway = RecordingGateway(settings(model_max_retries=0), providers(openai, gemini, anthropic))
+    stream = gateway.stream(uuid.uuid4(), request(allow_fallback=False))
+
+    assert (await anext(stream)).kind == "start"
+    assert (await anext(stream)).kind == "delta"
+    pending = asyncio.create_task(anext(stream))
+    await asyncio.sleep(0)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    assert gateway.records[0]["status"] == "failed"
+    error = cast(ProviderFailure, gateway.records[0]["error"])
+    assert error.code == "client_stream_cancelled"
 
 
 @pytest.mark.asyncio

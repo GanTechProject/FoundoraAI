@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from foundora.agents.recovery import MAX_WORKER_RECOVERIES, _recover_stale_state
 from foundora.agents.runtime import AgentRuntime, ExecutionClaim
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.service import (
@@ -15,6 +16,7 @@ from foundora.agents.service import (
     AgentNotFound,
     AgentRunRecord,
     SkillNotAssigned,
+    _agent_job_id,
 )
 from foundora.api.agents import _run_view
 from foundora.api.auth import require_auth, require_csrf
@@ -304,6 +306,37 @@ def test_agent_schema_rejects_extra_and_malformed_output() -> None:
         )
 
 
+def test_stale_worker_run_recovery_is_bounded() -> None:
+    now = datetime.now(UTC)
+    run = AgentRun(
+        status="running",
+        worker_recovery_count=MAX_WORKER_RECOVERIES - 1,
+        queued_at=now - timedelta(minutes=10),
+        started_at=now - timedelta(minutes=9),
+        model_operation_id=uuid.uuid4(),
+    )
+
+    assert _recover_stale_state(run, now) == "requeued"
+    assert run.status == "queued"
+    assert run.worker_recovery_count == MAX_WORKER_RECOVERIES
+    assert run.started_at is None
+    assert run.model_operation_id is None
+
+    run.status = "running"
+    run.started_at = now - timedelta(minutes=9)
+    assert _recover_stale_state(run, now) == "failed"
+    assert run.status == "failed"
+    assert run.error_type == "worker_recovery_exhausted"
+
+
+def test_each_worker_recovery_uses_a_distinct_deterministic_job_id() -> None:
+    run_id = uuid.uuid4()
+
+    assert _agent_job_id(run_id, 0) == f"agent-run-{run_id}"
+    assert _agent_job_id(run_id, 1) == f"agent-run-{run_id}-recovery-1"
+    assert _agent_job_id(run_id, 3) == f"agent-run-{run_id}-recovery-3"
+
+
 def test_agent_api_requires_selected_authenticated_owner() -> None:
     with TestClient(app) as client:
         response = client.get("/agents")
@@ -408,6 +441,7 @@ def test_run_view_links_messages_and_gateway_usage() -> None:
         model_operation_id=uuid.uuid4(),
         error_type=None,
         error_message=None,
+        worker_recovery_count=0,
         created_at=now,
         queued_at=now,
         started_at=now,
