@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, and the Phase 03 multi-business workspace. The founder can create, switch, profile, status, archive, configure, and set goals for independent businesses without introducing SaaS tenancy.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, the multi-business workspace, and Phase 04 business onboarding. The founder can capture a resumable business draft, review its exact structured form, and explicitly approve the profile Foundora may treat as fact.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -73,6 +73,10 @@ Open http://localhost:3000 after provisioning. Unauthenticated requests are redi
 
 Business selection is stored per authenticated session. Creating a first business selects it automatically; creating additional businesses does not silently change the current context. Archived businesses remain visible as historical registry entries but cannot be selected. Phase 03 has no demo business seed and does not assume which real business the founder will launch.
 
+For a selected business, open `/onboarding` from the workspace. The wizard records idea/existing-business status, name, industry, geography, problem, target audience, offer, goals, existing assets, constraints, budget context, brand preferences, and founder-declared services. Each step saves with optimistic revision protection and can be resumed later. Submission freezes a draft for review; a separate explicit approval creates or replaces the approved profile. Reopening an approved profile leaves the last approved version authoritative until a revision is approved again.
+
+No AI provider or model gateway exists yet. Phase 04 does not generate interpretations or silently infer facts. Listed services are declarations only and are never represented as authenticated connections.
+
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
 PostgreSQL and Redis bind only to localhost. PostgreSQL uses trust authentication only inside this local Compose network; production must supply independently managed authentication when a deployment phase selects an environment.
@@ -91,7 +95,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication and business-isolation smoke checks use temporary isolated databases and containers that are removed automatically, so an existing development owner or its businesses are not modified. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, and onboarding approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so an existing development owner, businesses, drafts, or approved profiles are not modified. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 ## Repository shape
 
@@ -103,4 +107,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business profiles, preferences, goals, and per-session selection are durable PostgreSQL records. Business onboarding and later operational domains remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business workspaces, onboarding drafts, and founder-approved versioned profiles are durable PostgreSQL records. Model providers and later operational domains remain deferred to their authorized phases.

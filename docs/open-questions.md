@@ -4,7 +4,7 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 
 | Decision needed | Needed by | Current safe default |
 |---|---:|---|
-| Which founder-owned business will be the first real launch? | Phase 04 planning; required for Phase 61 | Keep the Phase 03 registry generic and do not seed demo assumptions |
+| Which founder-owned business will be the first real launch? | Required for Phase 61 | Keep the business registry and onboarding generic; do not seed demo assumptions |
 | Which production deployment target should be selected? | Phase 59 | Continue with provider-independent Linux containers and environment-based configuration |
 | Which AI providers and budgets will the founder configure first? | Phase 05 | All providers disabled without valid credentials; no mock AI output |
 | Which search provider is preferred and what research budget is acceptable? | Phase 16 | No external research claims until a provider/tool is configured |
@@ -22,5 +22,7 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 3. No deployment environment is selected. Core architecture remains provider-independent until Phase 59.
 4. Phase 02 uses a server-provisioned owner password hashed with Argon2id and revocable opaque sessions. Passkeys and external identity remain replaceable future options, not current dependencies.
 5. Phase 03 stores the selected business on each owner session. Operational routes never accept an arbitrary business ID; only the explicit switch operation does.
+6. Phase 04 keeps mutable onboarding drafts separate from versioned approved profiles. No draft or future AI suggestion becomes fact without explicit founder approval.
+7. Connected services entered during onboarding are founder declarations only. Provider credential validation and real connection state belong to their later provider phases.
 
 Other questions can remain open until their named phase.

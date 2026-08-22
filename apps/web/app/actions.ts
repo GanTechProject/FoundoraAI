@@ -44,7 +44,7 @@ function workspaceError(response: Response): string {
 
 async function workspaceMutation(
   path: string,
-  body: Record<string, string | null> | undefined,
+  body: Record<string, unknown> | undefined,
 ): Promise<Response> {
   try {
     return await authenticatedApiRequest(path, body);
@@ -131,6 +131,108 @@ export async function archiveBusiness(formData: FormData): Promise<never> {
   const response = await workspaceMutation("/workspace/archive", undefined);
   if (!response.ok) redirect(`/workspace?error=${workspaceError(response)}`);
   redirect("/workspace?updated=archived");
+}
+
+function lines(formData: FormData, name: string): string[] {
+  return field(formData, name)
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+async function onboardingMutation(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  try {
+    return await authenticatedApiRequest(path, body);
+  } catch {
+    redirect("/onboarding?error=unavailable");
+  }
+}
+
+function onboardingFailure(response: Response): never {
+  redirect(
+    `/onboarding?error=${response.status === 409 ? "conflict" : response.status === 422 ? "incomplete" : "unavailable"}`,
+  );
+}
+
+export async function saveOnboardingFoundation(
+  formData: FormData,
+): Promise<never> {
+  const response = await onboardingMutation("/onboarding/steps/foundation", {
+    revision: field(formData, "revision"),
+    business_type: field(formData, "business_type"),
+    business_name: field(formData, "business_name"),
+    industry: field(formData, "industry"),
+    geography: field(formData, "geography"),
+  });
+  if (!response.ok) onboardingFailure(response);
+  redirect("/onboarding?step=2&updated=saved");
+}
+
+export async function saveOnboardingMarket(formData: FormData): Promise<never> {
+  const response = await onboardingMutation("/onboarding/steps/market", {
+    revision: field(formData, "revision"),
+    problem: field(formData, "problem"),
+    target_audience: field(formData, "target_audience"),
+    offer: field(formData, "offer"),
+  });
+  if (!response.ok) onboardingFailure(response);
+  redirect("/onboarding?step=3&updated=saved");
+}
+
+export async function saveOnboardingExecution(
+  formData: FormData,
+): Promise<never> {
+  const response = await onboardingMutation("/onboarding/steps/execution", {
+    revision: field(formData, "revision"),
+    goals: lines(formData, "goals"),
+    existing_assets: lines(formData, "existing_assets"),
+    constraints: lines(formData, "constraints"),
+    budget: field(formData, "budget"),
+  });
+  if (!response.ok) onboardingFailure(response);
+  redirect("/onboarding?step=4&updated=saved");
+}
+
+export async function saveOnboardingBrandServices(
+  formData: FormData,
+): Promise<never> {
+  const response = await onboardingMutation(
+    "/onboarding/steps/brand-services",
+    {
+      revision: field(formData, "revision"),
+      brand_preferences: field(formData, "brand_preferences"),
+      connected_services: lines(formData, "connected_services"),
+    },
+  );
+  if (!response.ok) onboardingFailure(response);
+  redirect("/onboarding?step=5&updated=saved");
+}
+
+export async function submitOnboarding(formData: FormData): Promise<never> {
+  const response = await onboardingMutation("/onboarding/submit", {
+    revision: field(formData, "revision"),
+  });
+  if (!response.ok) onboardingFailure(response);
+  redirect("/onboarding?updated=submitted");
+}
+
+export async function approveOnboarding(formData: FormData): Promise<never> {
+  const response = await onboardingMutation("/onboarding/approve", {
+    revision: field(formData, "revision"),
+  });
+  if (!response.ok) onboardingFailure(response);
+  redirect("/onboarding?updated=approved");
+}
+
+export async function reopenOnboarding(formData: FormData): Promise<never> {
+  const response = await onboardingMutation("/onboarding/reopen", {
+    revision: field(formData, "revision"),
+  });
+  if (!response.ok) onboardingFailure(response);
+  redirect("/onboarding?step=1&updated=reopened");
 }
 
 export async function logout(): Promise<never> {

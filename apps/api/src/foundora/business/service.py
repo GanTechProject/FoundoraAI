@@ -4,11 +4,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from foundora.auth.service import AuthContext
+from foundora.business.context import NoSelectedBusiness, resolve_selected_business
 from foundora.infrastructure.database import get_session_factory
 from foundora.models import Business, BusinessGoal, BusinessPreference, OwnerSession
 
@@ -18,10 +19,6 @@ class BusinessNameConflict(Exception):
 
 
 class BusinessNotFound(Exception):
-    pass
-
-
-class NoSelectedBusiness(Exception):
     pass
 
 
@@ -121,7 +118,7 @@ class BusinessService:
 
     async def get_workspace(self, context: AuthContext) -> Workspace:
         async with self._session_factory() as database:
-            business = await self._selected(database, context)
+            business = await resolve_selected_business(database, context)
             preferences = await database.get(BusinessPreference, business.id)
             if preferences is None:
                 raise NoSelectedBusiness
@@ -142,7 +139,7 @@ class BusinessService:
         try:
             async with self._session_factory() as database:
                 async with database.begin():
-                    business = await self._selected(database, context, lock=True)
+                    business = await resolve_selected_business(database, context, lock=True)
                     business.name = name
                     business.summary = summary
                     business.updated_at = _now()
@@ -153,7 +150,7 @@ class BusinessService:
     async def update_status(self, context: AuthContext, status: str) -> Business:
         async with self._session_factory() as database:
             async with database.begin():
-                business = await self._selected(database, context, lock=True)
+                business = await resolve_selected_business(database, context, lock=True)
                 business.status = status
                 business.updated_at = _now()
             return business
@@ -168,7 +165,7 @@ class BusinessService:
     ) -> BusinessPreference:
         async with self._session_factory() as database:
             async with database.begin():
-                business = await self._selected(database, context)
+                business = await resolve_selected_business(database, context)
                 preferences = await database.get(
                     BusinessPreference, business.id, with_for_update=True
                 )
@@ -190,7 +187,7 @@ class BusinessService:
     ) -> BusinessGoal:
         async with self._session_factory() as database:
             async with database.begin():
-                business = await self._selected(database, context)
+                business = await resolve_selected_business(database, context)
                 now = _now()
                 goal = BusinessGoal(
                     id=uuid.uuid4(),
@@ -210,7 +207,7 @@ class BusinessService:
     ) -> BusinessGoal:
         async with self._session_factory() as database:
             async with database.begin():
-                business = await self._selected(database, context)
+                business = await resolve_selected_business(database, context)
                 goal = await database.scalar(
                     select(BusinessGoal)
                     .where(
@@ -228,7 +225,7 @@ class BusinessService:
     async def archive_selected(self, context: AuthContext) -> Business:
         async with self._session_factory() as database:
             async with database.begin():
-                business = await self._selected(database, context, lock=True)
+                business = await resolve_selected_business(database, context, lock=True)
                 now = _now()
                 business.archived_at = now
                 business.updated_at = now
@@ -241,23 +238,3 @@ class BusinessService:
                     .values(selected_business_id=None)
                 )
             return business
-
-    async def _selected(
-        self, database: AsyncSession, context: AuthContext, *, lock: bool = False
-    ) -> Business:
-        query: Select[tuple[Business]] = (
-            select(Business)
-            .join(OwnerSession, OwnerSession.selected_business_id == Business.id)
-            .where(
-                OwnerSession.id == context.session.id,
-                OwnerSession.owner_id == context.owner.id,
-                Business.owner_id == context.owner.id,
-                Business.archived_at.is_(None),
-            )
-        )
-        if lock:
-            query = query.with_for_update(of=Business)
-        business = await database.scalar(query)
-        if business is None:
-            raise NoSelectedBusiness
-        return business

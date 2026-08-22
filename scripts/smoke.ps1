@@ -131,6 +131,9 @@ try {
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/workspace"
     }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/onboarding"
+    }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
         ConvertTo-Json -Compress
@@ -285,6 +288,196 @@ try {
             -Body (@{ status = "completed" } | ConvertTo-Json -Compress)
     }
 
+    $newOnboarding = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding" `
+        -WebSession $ownerSession
+    if ($newOnboarding.business_id -ne $businessAId -or `
+            $newOnboarding.draft.revision -ne 0 -or `
+            $newOnboarding.draft.status -ne "draft" -or `
+            $newOnboarding.approved_profile) {
+        throw "New Alpha onboarding did not start as an unapproved resumable draft"
+    }
+
+    $foundationResponse = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/onboarding/steps/foundation" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            revision = 0
+            business_type = "idea"
+            business_name = $businessAName
+            industry = "Founder software"
+            geography = "India"
+        } | ConvertTo-Json -Compress)
+    if ($foundationResponse.revision -ne 1 -or $foundationResponse.current_step -ne 2) {
+        throw "Onboarding foundation step was not saved resumably"
+    }
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/onboarding/steps/market" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                revision = 0
+                problem = "Stale problem"
+                target_audience = "Stale audience"
+                offer = "Stale offer"
+            } | ConvertTo-Json -Compress)
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/onboarding/submit" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ revision = 1 } | ConvertTo-Json -Compress)
+    }
+
+    $marketResponse = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/onboarding/steps/market" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            revision = 1
+            problem = "Founders lose time coordinating fragmented launch work"
+            target_audience = "First-time founders in India"
+            offer = "An approved launch operating profile"
+        } | ConvertTo-Json -Compress)
+    if ($marketResponse.revision -ne 2 -or $marketResponse.current_step -ne 3) {
+        throw "Onboarding market step was not saved"
+    }
+
+    $executionResponse = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/onboarding/steps/execution" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            revision = 2
+            goals = @("Launch an approved profile", "Reach ten founders")
+            existing_assets = @("Founder domain")
+            constraints = @("Small team", "No autonomous spend")
+            budget = "Founder-declared INR 100,000 launch ceiling"
+        } | ConvertTo-Json -Depth 4 -Compress)
+    if ($executionResponse.revision -ne 3 -or $executionResponse.goals.Count -ne 2) {
+        throw "Onboarding execution step was not saved"
+    }
+
+    $brandResponse = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/onboarding/steps/brand-services" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            revision = 3
+            brand_preferences = "Direct, calm, and evidence-led"
+            connected_services = @("GitHub", "Google Workspace")
+        } | ConvertTo-Json -Depth 4 -Compress)
+    if ($brandResponse.revision -ne 4 -or $brandResponse.current_step -ne 5) {
+        throw "Onboarding brand and services step was not saved"
+    }
+
+    $resumedDraft = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding" `
+        -WebSession $ownerSession
+    if ($resumedDraft.draft.revision -ne 4 -or `
+            $resumedDraft.draft.problem -ne "Founders lose time coordinating fragmented launch work" -or `
+            $resumedDraft.approved_profile) {
+        throw "Saved onboarding draft was not resumable or was silently approved"
+    }
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/onboarding/approve" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ revision = 4 } | ConvertTo-Json -Compress)
+    }
+
+    $reviewResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding/submit" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ revision = 4 } | ConvertTo-Json -Compress)
+    if ($reviewResponse.status -ne "review" -or $reviewResponse.revision -ne 5) {
+        throw "Onboarding was not frozen for separate founder review"
+    }
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/onboarding/steps/market" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                revision = 5
+                problem = "Review mutation"
+                target_audience = "Review mutation"
+                offer = "Review mutation"
+            } | ConvertTo-Json -Compress)
+    }
+
+    $approvedProfile = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding/approve" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ revision = 5 } | ConvertTo-Json -Compress)
+    if ($approvedProfile.version -ne 1 -or `
+            $approvedProfile.offer -ne "An approved launch operating profile") {
+        throw "Founder approval did not create the exact version-one profile"
+    }
+
+    $reopenResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding/reopen" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ revision = 6 } | ConvertTo-Json -Compress)
+    if ($reopenResponse.status -ne "draft" -or $reopenResponse.revision -ne 7) {
+        throw "Approved onboarding could not be reopened as a revision draft"
+    }
+
+    $revisedMarket = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/onboarding/steps/market" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            revision = 7
+            problem = "Founders lose time coordinating fragmented launch work"
+            target_audience = "First-time founders in India"
+            offer = "A revised founder-approved operating profile"
+        } | ConvertTo-Json -Compress)
+    if ($revisedMarket.revision -ne 8) { throw "Onboarding revision was not saved" }
+    $unapprovedRevision = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding" `
+        -WebSession $ownerSession
+    if ($unapprovedRevision.approved_profile.version -ne 1 -or `
+            $unapprovedRevision.approved_profile.offer -ne "An approved launch operating profile" -or `
+            $unapprovedRevision.draft.offer -ne "A revised founder-approved operating profile") {
+        throw "Unapproved revision silently changed the approved business facts"
+    }
+
+    $secondReview = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding/submit" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ revision = 8 } | ConvertTo-Json -Compress)
+    $secondApproval = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding/approve" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ revision = $secondReview.revision } | ConvertTo-Json -Compress)
+    if ($secondApproval.version -ne 2 -or `
+            $secondApproval.offer -ne "A revised founder-approved operating profile") {
+        throw "Explicit reapproval did not create exact profile version two"
+    }
+
+    Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ business_id = $businessBId } | ConvertTo-Json -Compress) | Out-Null
+    $betaOnboarding = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding" `
+        -WebSession $ownerSession
+    if ($betaOnboarding.business_id -ne $businessBId -or `
+            $betaOnboarding.draft.revision -ne 0 -or `
+            $betaOnboarding.approved_profile) {
+        throw "Alpha onboarding facts leaked into the Beta business"
+    }
+    Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ business_id = $businessAId } | ConvertTo-Json -Compress) | Out-Null
+
     $archiveResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/archive" `
         -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
         -WebSession $ownerSession
@@ -347,6 +540,48 @@ try {
         throw "Business selection leaked between independent owner sessions"
     }
 
+    $webOnboardingPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/onboarding" -WebSession $ownerWebSession
+    if (-not $webOnboardingPage.Content.Contains("Business starting point")) {
+        throw "Protected resumable onboarding wizard did not render"
+    }
+    $foundationFormMatch = [regex]::Match(
+        $webOnboardingPage.Content,
+        '<form[^>]*>(?:(?!</form>)[\s\S])*?id="onboarding-name"(?:(?!</form>)[\s\S])*?</form>'
+    )
+    if (-not $foundationFormMatch.Success) { throw "Onboarding foundation form was not rendered" }
+    $foundationActionMatch = [regex]::Match(
+        $foundationFormMatch.Value,
+        'name="(?<name>\$ACTION_ID_[A-Za-z0-9]+)"'
+    )
+    if (-not $foundationActionMatch.Success) { throw "Onboarding server action was not rendered" }
+    $foundationForm = @{
+        revision = "0"
+        business_type = "existing"
+        business_name = $webBusinessName
+        industry = "Founder services"
+        geography = "Remote"
+    }
+    $foundationForm[$foundationActionMatch.Groups["name"].Value] = ""
+    $foundationBoundary = "foundora-onboarding-$([guid]::NewGuid().ToString('N'))"
+    $foundationMultipart = [Text.StringBuilder]::new()
+    foreach ($field in $foundationForm.GetEnumerator()) {
+        [void]$foundationMultipart.Append("--$foundationBoundary`r`n")
+        [void]$foundationMultipart.Append("Content-Disposition: form-data; name=`"$($field.Key)`"`r`n`r`n")
+        [void]$foundationMultipart.Append("$($field.Value)`r`n")
+    }
+    [void]$foundationMultipart.Append("--$foundationBoundary--`r`n")
+    $foundationMultipartBytes = [Text.Encoding]::UTF8.GetBytes($foundationMultipart.ToString())
+    $webFoundationResponse = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/onboarding" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin } `
+        -ContentType "multipart/form-data; boundary=$foundationBoundary" `
+        -Body $foundationMultipartBytes -WebSession $ownerWebSession
+    if (-not $webFoundationResponse.Content.Contains("Target audience") -or `
+            -not $webFoundationResponse.Content.Contains("Market")) {
+        throw "Real onboarding web action did not persist and resume at step two"
+    }
+
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
     if (-not $settingsPage.Content.Contains("Owner settings")) {
@@ -395,8 +630,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_03") {
-        throw "Isolated Phase 03 migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_04") {
+        throw "Isolated Phase 04 migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -412,6 +647,17 @@ try {
         -tAc "SELECT count(*) FROM business_goals g JOIN businesses b ON b.id = g.business_id WHERE (b.name = '$businessAName' AND g.title = 'Beta-only goal') OR (b.name = '$businessBName' AND g.title = 'Alpha-only goal')"
     if ($LASTEXITCODE -ne 0 -or $crossBusinessGoalCount.Trim() -ne "0") {
         throw "Goal persistence crossed a business boundary"
+    }
+    $onboardingDraftCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
+        -tAc "SELECT count(*) FROM business_onboarding_drafts"
+    if ($LASTEXITCODE -ne 0 -or $onboardingDraftCount.Trim() -ne "2") {
+        throw "Expected isolated Alpha and web onboarding drafts"
+    }
+    $approvedProfileEvidence = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
+        -tAc "SELECT count(*) || '|' || min(version) || '|' || min(offer) FROM approved_business_profiles"
+    if ($LASTEXITCODE -ne 0 -or `
+            $approvedProfileEvidence.Trim() -ne "1|2|A revised founder-approved operating profile") {
+        throw "Founder-approved profile evidence is incorrect"
     }
 }
 finally {
@@ -439,6 +685,9 @@ finally {
     $businessForm = $null
     $businessMultipart = $null
     $businessMultipartBytes = $null
+    $foundationForm = $null
+    $foundationMultipart = $null
+    $foundationMultipartBytes = $null
 }
 
 $webResponse = Invoke-WebRequest -UseBasicParsing -Uri "$publicOrigin/login"
@@ -461,8 +710,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_03") {
-    throw "Phase 03 migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_04") {
+    throw "Phase 04 migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

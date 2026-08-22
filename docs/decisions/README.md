@@ -10,5 +10,6 @@
 | [ADR-0006](ADR-0006-portable-container-runtime.md) | Portable containers and deferred deployment provider | Accepted |
 | [ADR-0007](ADR-0007-single-owner-password-auth.md) | Single-owner password authentication with opaque sessions | Accepted |
 | [ADR-0008](ADR-0008-session-selected-business-context.md) | Session-selected business context and strict operational scoping | Accepted |
+| [ADR-0009](ADR-0009-founder-approved-onboarding-facts.md) | Resumable onboarding with an explicit founder-approved fact boundary | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

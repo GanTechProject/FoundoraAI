@@ -68,6 +68,11 @@ export default async function WorkspacePage({
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
+          {workspace ? (
+            <Link className="text-link" href="/onboarding">
+              Onboarding
+            </Link>
+          ) : null}
           <Link className="text-link" href="/settings/security">
             Security
           </Link>

@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 03 is a portable modular monorepo:
+The implementation through Phase 04 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -44,7 +44,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 03
+## Implemented foundation through Phase 04
 
 The verified baseline is:
 
@@ -64,6 +64,10 @@ The verified baseline is:
 - durable business profiles, lifecycle status and archive state, validated timezone/currency/locale preferences, and goals;
 - per-session business selection, with owner checks on every operational query and selection cleared across sessions when a business is archived;
 - a protected server-rendered workspace for creating, switching, and maintaining multiple businesses.
+- a four-step, server-rendered onboarding wizard with durable progress and optimistic revision checks;
+- separate mutable onboarding drafts and versioned founder-approved profiles, with a frozen review transition between them;
+- an explicit fact-promotion boundary: drafts and future suggestions are never read as approved facts, and only founder approval updates the approved profile;
+- founder-declared service context that does not imply provider authentication or connectivity.
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 

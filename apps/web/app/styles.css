@@ -91,7 +91,8 @@ h2 {
 
 .auth-shell,
 .settings-shell,
-.workspace-shell {
+.workspace-shell,
+.onboarding-shell {
   width: min(1120px, calc(100% - 40px));
   margin: 0 auto;
 }
@@ -114,6 +115,119 @@ h2 {
 .workspace-shell {
   min-height: 100vh;
   padding: 7vh 0;
+  display: block;
+}
+
+.onboarding-shell {
+  min-height: 100vh;
+  padding: 7vh 0;
+  display: block;
+}
+
+.wizard-progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  padding: 0;
+  list-style: none;
+}
+
+.wizard-progress li {
+  display: block;
+  border: 0;
+  border-right: 1px solid var(--line);
+  padding: 0;
+}
+
+.wizard-progress li:last-child {
+  border-right: 0;
+}
+
+.wizard-progress a,
+.wizard-progress li > span {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-height: 64px;
+  padding: 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.wizard-progress a > span,
+.wizard-progress li > span > span {
+  color: var(--accent);
+  font-family: "Courier New", monospace;
+}
+
+.wizard-progress .wizard-current {
+  background: rgba(217, 255, 99, 0.08);
+}
+
+.wizard-progress .wizard-current a,
+.wizard-progress .wizard-current > span {
+  color: var(--ink);
+}
+
+.onboarding-card {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.fact-boundary {
+  margin: -10px 0 26px;
+  border-left: 2px solid var(--accent);
+  padding-left: 14px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.profile-review {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 28px 0;
+  background: var(--line);
+}
+
+.profile-review > div {
+  min-width: 0;
+  padding: 18px;
+  background: var(--surface);
+}
+
+.profile-review .review-wide {
+  grid-column: 1 / -1;
+}
+
+.profile-review dt {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font:
+    700 0.68rem/1.2 "Courier New",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-review dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.approval-actions form {
   display: block;
 }
 
@@ -474,12 +588,26 @@ li {
   }
 
   .workspace-grid,
-  .goal-form {
+  .goal-form,
+  .profile-review {
     grid-template-columns: 1fr;
   }
 
   .goal-form .goal-details,
   .goal-form > button {
+    grid-column: auto;
+  }
+
+  .wizard-progress {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-progress li {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .profile-review .review-wide {
     grid-column: auto;
   }
 }

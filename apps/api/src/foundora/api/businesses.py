@@ -11,12 +11,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from foundora.api.auth import require_auth, require_csrf
 from foundora.auth.service import AuthContext
+from foundora.business.context import NoSelectedBusiness
 from foundora.business.service import (
     BusinessNameConflict,
     BusinessNotFound,
     BusinessService,
     GoalNotFound,
-    NoSelectedBusiness,
     Workspace,
 )
 from foundora.models import Business, BusinessGoal, BusinessPreference

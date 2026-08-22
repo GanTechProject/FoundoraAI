@@ -9,11 +9,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from foundora import __version__
 from foundora.api.auth import router as auth_router
 from foundora.api.businesses import router as businesses_router
 from foundora.api.health import router as health_router
+from foundora.api.onboarding import router as onboarding_router
+from foundora.business.context import NoSelectedBusiness
 from foundora.config import get_settings
 from foundora.infrastructure.database import close_database
 from foundora.infrastructure.redis import close_redis
@@ -62,6 +65,13 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "X-Correlation-ID", "X-CSRF-Token"],
     )
 
+    @application.exception_handler(NoSelectedBusiness)
+    async def no_selected_business(_: Request, __: NoSelectedBusiness) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "No active business is selected"},
+        )
+
     @application.middleware("http")
     async def request_context(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -102,6 +112,7 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(businesses_router)
+    application.include_router(onboarding_router)
     return application
 
 

@@ -4,11 +4,13 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     SmallInteger,
     String,
     Text,
@@ -115,3 +117,72 @@ class BusinessGoal(Base):
 
 
 Index("uq_businesses_owner_name", Business.owner_id, func.lower(Business.name), unique=True)
+
+
+class BusinessOnboardingDraft(Base):
+    __tablename__ = "business_onboarding_drafts"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'review', 'approved')",
+            name="ck_business_onboarding_drafts_status",
+        ),
+        CheckConstraint(
+            "current_step BETWEEN 1 AND 5",
+            name="ck_business_onboarding_drafts_current_step",
+        ),
+    )
+
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    current_step: Mapped[int] = mapped_column(SmallInteger, default=1)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    business_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    business_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    geography: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    problem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_audience: Mapped[str | None] = mapped_column(Text, nullable=True)
+    offer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    goals: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    existing_assets: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    constraints: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    budget: Mapped[str | None] = mapped_column(Text, nullable=True)
+    brand_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
+    connected_services: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ApprovedBusinessProfile(Base):
+    __tablename__ = "approved_business_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "business_type IN ('idea', 'existing')",
+            name="ck_approved_business_profiles_business_type",
+        ),
+    )
+
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    business_type: Mapped[str] = mapped_column(String(16))
+    business_name: Mapped[str] = mapped_column(String(120))
+    industry: Mapped[str] = mapped_column(String(160))
+    geography: Mapped[str] = mapped_column(String(240))
+    problem: Mapped[str] = mapped_column(Text)
+    target_audience: Mapped[str] = mapped_column(Text)
+    offer: Mapped[str] = mapped_column(Text)
+    goals: Mapped[list[str]] = mapped_column(JSON)
+    existing_assets: Mapped[list[str]] = mapped_column(JSON)
+    constraints: Mapped[list[str]] = mapped_column(JSON)
+    budget: Mapped[str] = mapped_column(Text)
+    brand_preferences: Mapped[str] = mapped_column(Text)
+    connected_services: Mapped[list[str]] = mapped_column(JSON)
+    approved_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
