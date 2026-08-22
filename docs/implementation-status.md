@@ -16,7 +16,7 @@ Status date: 2026-08-22
 |---:|---|---|---|
 | 00 | Forensic Baseline | COMPLETE | Repository truth, architecture, decisions, open questions, and reproducible checks documented under `docs/` |
 | 01 | Foundation | COMPLETE | Docker Compose starts healthy web, API, PostgreSQL, Redis, and worker services; migration `20260822_01` is applied; all documented quality/build/smoke gates pass |
-| 02 | Owner Authentication & Security Base | NOT IMPLEMENTED | No auth system |
+| 02 | Owner Authentication & Security Base | COMPLETE | Single owner, Argon2id credentials, revocable PostgreSQL sessions, CSRF/origin protection, Redis throttling, protected settings UI, security headers, and full quality/smoke gates pass |
 | 03 | Business Workspace | NOT IMPLEMENTED | No business domain |
 | 04 | Business Onboarding | NOT IMPLEMENTED | No onboarding flow |
 | 05 | Model Gateway | NOT IMPLEMENTED | No provider adapter |
@@ -84,4 +84,4 @@ Public SaaS signup, organizations/tenants, subscription billing, team RBAC, ente
 
 ## Next authorized phase
 
-None. Phase 01 is complete and the phase-gated specification requires a new explicit founder instruction before Phase 02 begins.
+None. Phase 02 is complete and the phase-gated specification requires a new explicit founder instruction before Phase 03 begins.

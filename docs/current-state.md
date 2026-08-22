@@ -1,6 +1,8 @@
-# Foundora Current-State Baseline
+# Foundora Forensic Starting Baseline
 
 Baseline date: 2026-08-22 (Asia/Calcutta)
+
+This document preserves the repository state observed before implementation began. It is historical evidence, not the current implementation ledger; see `implementation-status.md` and the phase evidence documents for current state.
 
 ## Executive finding
 
@@ -88,4 +90,4 @@ docker --version
 Get-FileHash -Algorithm SHA256 -LiteralPath .\Foundora_Complete_Master_Build_Specification_v2.txt
 ```
 
-The inventory will now also show the Phase 00 documentation described in `docs/implementation-status.md`.
+The inventory now also shows all implemented phase artifacts described in `docs/implementation-status.md`; the commands above are retained only to reproduce how the original baseline was established.

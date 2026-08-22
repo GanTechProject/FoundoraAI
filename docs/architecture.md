@@ -44,7 +44,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation for Phase 01
+## Implemented foundation through Phase 02
 
 The verified baseline is:
 
@@ -56,8 +56,12 @@ The verified baseline is:
 - structured JSON logging and correlation IDs from the first executable phase;
 - contract/schema generation or a shared versioned contract boundary rather than duplicated handwritten DTOs;
 - CI gates for formatting, lint, type checking, unit tests, migration validation, and production builds.
+- a single server-provisioned owner identity with Argon2id credentials;
+- PostgreSQL-backed opaque sessions with CSRF tokens, expiration, rotation, and revocation;
+- Redis-backed login throttling, exact-origin enforcement, and hardened HTTP response headers;
+- a server-rendered login boundary and protected owner security settings.
 
-Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase 01 runtime evidence is recorded in `docs/phase-01-foundation.md`.
+Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 
 ## Dependency direction
 

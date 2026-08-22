@@ -4,6 +4,7 @@ x-api-environment: &api-environment
   FOUNDORA_DATABASE_URL: postgresql+asyncpg://foundora@postgres:5432/foundora
   FOUNDORA_REDIS_URL: redis://redis:6379/0
   FOUNDORA_LOG_LEVEL: ${FOUNDORA_LOG_LEVEL:-INFO}
+  FOUNDORA_PUBLIC_ORIGIN: http://localhost:${WEB_PORT:-3000}
 
 services:
   postgres:
@@ -103,6 +104,7 @@ services:
       target: runtime
     environment:
       API_INTERNAL_URL: http://api:8000
+      FOUNDORA_PUBLIC_ORIGIN: http://localhost:${WEB_PORT:-3000}
       NEXT_TELEMETRY_DISABLED: "1"
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"

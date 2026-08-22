@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from foundora import __version__
+from foundora.api.auth import router as auth_router
 from foundora.api.health import router as health_router
 from foundora.config import get_settings
 from foundora.infrastructure.database import close_database
@@ -21,6 +22,16 @@ settings = get_settings()
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 correlation_pattern = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def add_security_headers(response: Response) -> None:
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    if settings.environment == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
 
 
 @asynccontextmanager
@@ -38,13 +49,16 @@ def create_app() -> FastAPI:
         description="Provider-independent Foundora application API",
         version=__version__,
         lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=False,
-        allow_methods=["GET"],
-        allow_headers=["Content-Type", "X-Correlation-ID"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-Correlation-ID", "X-CSRF-Token"],
     )
 
     @application.middleware("http")
@@ -56,8 +70,20 @@ def create_app() -> FastAPI:
         token = correlation_id.set(request_id)
         started = time.perf_counter()
         try:
-            response = await call_next(request)
+            if request.method not in {"GET", "HEAD", "OPTIONS"}:
+                origin = request.headers.get("Origin")
+                if origin not in settings.cors_origins:
+                    response = Response(
+                        content='{"detail":"Request origin is not allowed"}',
+                        status_code=403,
+                        media_type="application/json",
+                    )
+                else:
+                    response = await call_next(request)
+            else:
+                response = await call_next(request)
             response.headers["X-Correlation-ID"] = request_id
+            add_security_headers(response)
             logger.info(
                 "HTTP request completed",
                 extra={
@@ -73,6 +99,7 @@ def create_app() -> FastAPI:
             correlation_id.reset(token)
 
     application.include_router(health_router)
+    application.include_router(auth_router)
     return application
 
 

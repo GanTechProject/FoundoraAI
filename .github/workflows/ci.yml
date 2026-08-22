@@ -1,4 +1,4 @@
-name: Phase 01 quality
+name: Foundora quality and smoke gates
 
 on:
   push:
