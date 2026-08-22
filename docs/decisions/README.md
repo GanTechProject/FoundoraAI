@@ -1,0 +1,12 @@
+# Architecture Decision Records
+
+| ADR | Decision | Status |
+|---|---|---|
+| [ADR-0001](ADR-0001-owner-operated-v1.md) | Owner-operated V1 with future SaaS boundaries | Accepted |
+| [ADR-0002](ADR-0002-modular-monolith.md) | Modular monolith with separated processes | Accepted |
+| [ADR-0003](ADR-0003-phase-gated-delivery.md) | Strict phase-gated, evidence-based delivery | Accepted |
+| [ADR-0004](ADR-0004-governed-side-effects.md) | Govern all external and risky side effects | Accepted |
+| [ADR-0005](ADR-0005-rq-worker.md) | Redis Queue for the foundation worker | Accepted |
+| [ADR-0006](ADR-0006-portable-container-runtime.md) | Portable containers and deferred deployment provider | Accepted |
+
+Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

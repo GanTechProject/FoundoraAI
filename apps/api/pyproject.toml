@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools==82.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "foundora-api"
+version = "0.1.0"
+description = "Foundora API and background worker foundation"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "alembic==1.19.1",
+  "asyncpg==0.31.0",
+  "fastapi==0.141.1",
+  "pydantic-settings==2.15.0",
+  "redis==8.1.0",
+  "rq==2.11.0",
+  "sqlalchemy==2.0.52",
+  "uvicorn==0.52.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx==0.28.1",
+  "mypy==2.3.1",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.16.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = ["foundora"]

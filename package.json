@@ -1,0 +1,21 @@
+{
+  "name": "foundora",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.17.0",
+  "engines": {
+    "node": "24.19.0",
+    "npm": "11.17.0"
+  },
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@foundora/web",
+    "dev": "npm run dev --workspace=@foundora/web",
+    "format:check": "npm run format:check --workspace=@foundora/web",
+    "lint": "npm run lint --workspace=@foundora/web",
+    "test": "npm run test --workspace=@foundora/web",
+    "typecheck": "npm run typecheck --workspace=@foundora/web"
+  }
+}

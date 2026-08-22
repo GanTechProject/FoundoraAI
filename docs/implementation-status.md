@@ -1,0 +1,87 @@
+# Foundora Implementation Status
+
+Status date: 2026-08-22
+
+## Status rules
+
+- **COMPLETE** means the phase acceptance criteria were verified.
+- **PARTIAL** means some phase requirements exist but acceptance is not met.
+- **BLOCKED** means implementation cannot make meaningful progress without an external decision or state change.
+- **NOT IMPLEMENTED** means no verified implementation exists.
+- **DEFERRED BY DESIGN** is used only where the master specification explicitly postpones scope.
+
+## Phase ledger
+
+| Phase | Name | Status | Evidence |
+|---:|---|---|---|
+| 00 | Forensic Baseline | COMPLETE | Repository truth, architecture, decisions, open questions, and reproducible checks documented under `docs/` |
+| 01 | Foundation | COMPLETE | Docker Compose starts healthy web, API, PostgreSQL, Redis, and worker services; migration `20260822_01` is applied; all documented quality/build/smoke gates pass |
+| 02 | Owner Authentication & Security Base | NOT IMPLEMENTED | No auth system |
+| 03 | Business Workspace | NOT IMPLEMENTED | No business domain |
+| 04 | Business Onboarding | NOT IMPLEMENTED | No onboarding flow |
+| 05 | Model Gateway | NOT IMPLEMENTED | No provider adapter |
+| 06 | Company / Business Brain | NOT IMPLEMENTED | No context service |
+| 07 | Agent Registry & Runtime | NOT IMPLEMENTED | No agent runtime |
+| 08 | Skill Registry | NOT IMPLEMENTED | No skill runtime |
+| 09 | Task Engine | NOT IMPLEMENTED | No task engine |
+| 10 | Workflow Engine | NOT IMPLEMENTED | No workflow engine |
+| 11 | Policy, Risk & Approval Engine | NOT IMPLEMENTED | No governance runtime |
+| 12 | Event Bus | NOT IMPLEMENTED | No event system |
+| 13 | Knowledge Ingestion | NOT IMPLEMENTED | No ingestion/retrieval system |
+| 14 | Memory System | NOT IMPLEMENTED | No memory system |
+| 15 | Executive Agents | NOT IMPLEMENTED | No agents |
+| 16 | Research Agents | NOT IMPLEMENTED | No agents/search provider |
+| 17 | Business Strategy | NOT IMPLEMENTED | No strategy domain |
+| 18 | Product & Offer System | NOT IMPLEMENTED | No offer domain |
+| 19 | Brand System | NOT IMPLEMENTED | No brand domain |
+| 20 | Website Specification Engine | NOT IMPLEMENTED | No website specification domain |
+| 21 | Website/Coding Agent | NOT IMPLEMENTED | No coding agent |
+| 22 | Sandbox | NOT IMPLEMENTED | No execution sandbox |
+| 23 | Website QA Agent | NOT IMPLEMENTED | No QA agent |
+| 24 | Deployment | NOT IMPLEMENTED | No deployment provider |
+| 25 | Domain/DNS | NOT IMPLEMENTED | No DNS provider |
+| 26 | Creative Engine | NOT IMPLEMENTED | No creative provider/agent |
+| 27 | SEO System | NOT IMPLEMENTED | No SEO domain |
+| 28 | Content System | NOT IMPLEMENTED | No content domain |
+| 29 | Marketing Strategy | NOT IMPLEMENTED | No campaign domain |
+| 30 | Social Media | NOT IMPLEMENTED | No social provider/agent |
+| 31 | Email Marketing | NOT IMPLEMENTED | No email provider/agent |
+| 32 | Advertising | NOT IMPLEMENTED | No advertising provider/agent |
+| 33 | CRM | NOT IMPLEMENTED | No CRM domain |
+| 34 | Lead Generation | NOT IMPLEMENTED | No lead-generation agent |
+| 35 | Sales | NOT IMPLEMENTED | No sales agent |
+| 36 | Customer Support | NOT IMPLEMENTED | No support domain/agent |
+| 37 | Customer Success | NOT IMPLEMENTED | No success domain/agent |
+| 38 | Operations | NOT IMPLEMENTED | No operations domain/agent |
+| 39 | Finance Analysis | NOT IMPLEMENTED | No finance domain/agent |
+| 40 | Analytics | NOT IMPLEMENTED | No metrics system |
+| 41 | Autonomous Observation | NOT IMPLEMENTED | No observers |
+| 42 | Opportunity / Problem Detection | NOT IMPLEMENTED | No detection engine |
+| 43 | Autonomous Planning | NOT IMPLEMENTED | No autonomous planner |
+| 44 | Scheduler | NOT IMPLEMENTED | No durable scheduler |
+| 45 | Autonomous Execution Loop | NOT IMPLEMENTED | No autonomy runtime |
+| 46 | Outcome Measurement | NOT IMPLEMENTED | No outcome tracking |
+| 47 | Agent Evaluation | NOT IMPLEMENTED | No evaluation framework |
+| 48 | Optimization Agent | NOT IMPLEMENTED | No optimization agent |
+| 49 | Monitoring Agent | NOT IMPLEMENTED | No monitoring agent |
+| 50 | Security Agent + Hardening | NOT IMPLEMENTED | No security agent/testing harness |
+| 51 | Audit Agent | NOT IMPLEMENTED | No immutable audit system |
+| 52 | Legal/Compliance Assistant | NOT IMPLEMENTED | No compliance assistant |
+| 53 | Notifications | NOT IMPLEMENTED | No notification domain |
+| 54 | Owner Control Center | NOT IMPLEMENTED | No UI |
+| 55 | AI & Infrastructure Cost Ledger | NOT IMPLEMENTED | No usage ledger |
+| 56 | Observability | NOT IMPLEMENTED | No runtime telemetry |
+| 57 | Backup & Recovery | NOT IMPLEMENTED | No data stores or runbook |
+| 58 | Performance & Cost Optimization | NOT IMPLEMENTED | No runtime to measure |
+| 59 | Production Configuration | NOT IMPLEMENTED | No staging/production infrastructure |
+| 60 | Full System Regression | NOT IMPLEMENTED | No complete system |
+| 61 | First Real Business Launch | NOT IMPLEMENTED | Requires completed product and founder-owned business |
+| 62 | Product Completion Audit | NOT IMPLEMENTED | Requires prior phases |
+
+## Deferred scope
+
+Public SaaS signup, organizations/tenants, subscription billing, team RBAC, enterprise SSO, tenant-specific secrets/quotas, Kubernetes, multi-region infrastructure, and fleet-scale hosting are **DEFERRED BY DESIGN** for V1. Extension boundaries must be preserved without implementing this scope prematurely.
+
+## Next authorized phase
+
+None. Phase 01 is complete and the phase-gated specification requires a new explicit founder instruction before Phase 02 begins.
