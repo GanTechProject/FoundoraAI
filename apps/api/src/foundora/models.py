@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -186,3 +187,81 @@ class ApprovedBusinessProfile(Base):
         ForeignKey("owners.id", ondelete="RESTRICT")
     )
     approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ModelGatewayCall(Base):
+    __tablename__ = "model_gateway_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('succeeded', 'failed')",
+            name="ck_model_gateway_calls_status",
+        ),
+        CheckConstraint(
+            "sensitivity IN ('standard', 'sensitive')",
+            name="ck_model_gateway_calls_sensitivity",
+        ),
+        CheckConstraint(
+            "attempt_number > 0 AND retry_number >= 0",
+            name="ck_model_gateway_calls_attempts",
+        ),
+        CheckConstraint(
+            "input_tokens >= 0 AND output_tokens >= 0 AND "
+            "total_tokens = input_tokens + output_tokens",
+            name="ck_model_gateway_calls_tokens",
+        ),
+        CheckConstraint(
+            "estimated_cost_microusd >= 0 AND latency_ms >= 0",
+            name="ck_model_gateway_calls_measurements",
+        ),
+        Index("ix_model_gateway_calls_business_created", "business_id", "created_at"),
+        Index("ix_model_gateway_calls_operation_attempt", "operation_id", "attempt_number"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    operation_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    request_id: Mapped[str] = mapped_column(String(128))
+    task_type: Mapped[str] = mapped_column(String(80))
+    sensitivity: Mapped[str] = mapped_column(String(16))
+    provider: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(16))
+    attempt_number: Mapped[int] = mapped_column(SmallInteger)
+    retry_number: Mapped[int] = mapped_column(SmallInteger)
+    fallback_from: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    streamed: Mapped[bool] = mapped_column(default=False)
+    structured: Mapped[bool] = mapped_column(default=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_cost_microusd: Mapped[int] = mapped_column(BigInteger, default=0)
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ModelProviderValidation(Base):
+    __tablename__ = "model_provider_validations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('valid', 'invalid')",
+            name="ck_model_provider_validations_status",
+        ),
+        CheckConstraint(
+            "latency_ms >= 0",
+            name="ck_model_provider_validations_latency",
+        ),
+        Index("ix_model_provider_validations_provider_checked", "provider", "checked_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(16))
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

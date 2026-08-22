@@ -2,12 +2,14 @@
 
 ## Current architecture
 
-The implementation through Phase 04 is a portable modular monorepo:
+The implementation through Phase 05 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
 - `apps/api`: a separately runnable RQ worker consuming the Redis-backed `foundora` queue;
 - Alembic: a gated migration process that must complete before API and worker startup;
+- a provider-independent model gateway with native HTTP adapters, governed routing,
+  budgets, streaming, structured output, and business-scoped usage evidence;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -44,7 +46,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 04
+## Implemented foundation through Phase 05
 
 The verified baseline is:
 
@@ -68,6 +70,14 @@ The verified baseline is:
 - separate mutable onboarding drafts and versioned founder-approved profiles, with a frozen review transition between them;
 - an explicit fact-promotion boundary: drafts and future suggestions are never read as approved facts, and only founder approval updates the approved profile;
 - founder-declared service context that does not imply provider authentication or connectivity.
+- server-only OpenAI, Gemini, and optional Anthropic adapters behind a Foundora-owned
+  provider contract and code-reviewed model registry;
+- bounded retry and standard-only fallback routing, provider configuration
+  validation, structured responses, and server-sent-event streaming;
+- shared operation token/cost ceilings and durable business-scoped attempt metadata
+  without storing prompts, output, keys, or raw provider error bodies;
+- a protected AI settings dashboard backed entirely by live configuration and
+  persisted usage state.
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 

@@ -235,6 +235,54 @@ export async function reopenOnboarding(formData: FormData): Promise<never> {
   redirect("/onboarding?step=1&updated=reopened");
 }
 
+export async function validateModelProvider(
+  formData: FormData,
+): Promise<never> {
+  const provider = field(formData, "provider");
+  if (!["openai", "gemini", "anthropic"].includes(provider)) {
+    redirect("/settings/ai?error=provider");
+  }
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest(
+      `/ai/providers/${encodeURIComponent(provider)}/validate`,
+      {},
+    );
+  } catch {
+    redirect("/settings/ai?error=unavailable");
+  }
+  if (!response.ok) redirect("/settings/ai?error=provider");
+  redirect("/settings/ai?updated=validated");
+}
+
+export async function runModelGatewayCheck(): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest("/ai/generate", {
+      task_type: "gateway.acceptance",
+      prompt: "Reply with exactly FOUNDORA_GATEWAY_OK and nothing else.",
+      system_prompt: "Follow the requested output format exactly.",
+      sensitivity: "standard",
+      allow_fallback: true,
+      max_output_tokens: 32,
+      token_budget: 1024,
+      cost_budget_microusd: 2000,
+    });
+  } catch {
+    redirect("/settings/ai?error=unavailable");
+  }
+  if (!response.ok) {
+    const code =
+      response.status === 503
+        ? "disabled"
+        : response.status === 422
+          ? "budget"
+          : "provider";
+    redirect(`/settings/ai?error=${code}`);
+  }
+  redirect("/settings/ai?updated=generated");
+}
+
 export async function logout(): Promise<never> {
   try {
     await authenticatedApiRequest("/auth/logout", undefined);

@@ -38,3 +38,11 @@ def test_production_requires_https_and_secure_cookies() -> None:
 def test_session_idle_timeout_cannot_exceed_absolute_timeout() -> None:
     with pytest.raises(ValidationError):
         Settings(session_idle_minutes=60, session_absolute_minutes=30)
+
+
+def test_provider_keys_accept_standard_names_and_stay_masked() -> None:
+    settings = Settings(_env_file=None, OPENAI_API_KEY="never-print-this")
+
+    assert settings.openai_api_key is not None
+    assert settings.openai_api_key.get_secret_value() == "never-print-this"
+    assert "never-print-this" not in repr(settings)

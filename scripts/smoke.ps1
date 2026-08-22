@@ -134,6 +134,9 @@ try {
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/onboarding"
     }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/ai"
+    }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
         ConvertTo-Json -Compress
@@ -499,6 +502,118 @@ try {
         -ContentType "application/json" -WebSession $ownerSession `
         -Body (@{ business_id = $businessBId } | ConvertTo-Json -Compress) | Out-Null
 
+    $gatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
+        -WebSession $ownerSession
+    $openAiStatus = $gatewayDashboard.providers | `
+        Where-Object { $_.name -eq "openai" } | Select-Object -First 1
+    $geminiStatus = $gatewayDashboard.providers | `
+        Where-Object { $_.name -eq "gemini" } | Select-Object -First 1
+    $anthropicStatus = $gatewayDashboard.providers | `
+        Where-Object { $_.name -eq "anthropic" } | Select-Object -First 1
+    if (-not $openAiStatus.configured -or -not $geminiStatus.configured) {
+        throw "OpenAI and Gemini keys were not detected by the isolated API"
+    }
+    if ($anthropicStatus.configured) {
+        throw "Anthropic unexpectedly reported configured without a supplied key"
+    }
+    if ($gatewayDashboard.usage.calls -ne 0) {
+        throw "Fresh business model usage was not isolated"
+    }
+
+    $openAiValidation = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/ai/providers/openai/validate" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -WebSession $ownerSession
+    if (-not $openAiValidation.configured) {
+        throw "Configured OpenAI credential was not validated"
+    }
+    $geminiValidation = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/ai/providers/gemini/validate" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -WebSession $ownerSession
+    if (-not $geminiValidation.configured -or -not $geminiValidation.valid -or `
+            -not $geminiValidation.model_available) {
+        throw "Live Gemini provider validation failed"
+    }
+    $disabledValidation = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/ai/providers/anthropic/validate" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -WebSession $ownerSession
+    if ($disabledValidation.configured -or $disabledValidation.valid -or `
+            $disabledValidation.model_available) {
+        throw "Missing Anthropic key did not disable the provider cleanly"
+    }
+
+    $liveGatewayBody = @{
+        task_type = "acceptance"
+        prompt = "Reply with exactly: FOUNDORA_GATEWAY_OK"
+        sensitivity = "standard"
+        allow_fallback = $true
+        max_output_tokens = 32
+        token_budget = 1024
+        cost_budget_microusd = 2000
+    } | ConvertTo-Json -Compress
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/ai/generate" `
+            -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession -Body $liveGatewayBody
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/ai/generate" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                task_type = "acceptance"
+                prompt = "This must stop before execution"
+                sensitivity = "standard"
+                allow_fallback = $false
+                max_output_tokens = 32
+                token_budget = 10
+                cost_budget_microusd = 2000
+            } | ConvertTo-Json -Compress)
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/ai/generate" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                task_type = "acceptance"
+                prompt = "Fallback policy rejection"
+                sensitivity = "sensitive"
+                allow_fallback = $true
+                max_output_tokens = 32
+                token_budget = 1024
+                cost_budget_microusd = 2000
+            } | ConvertTo-Json -Compress)
+    }
+    $liveGatewayResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/ai/generate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession -Body $liveGatewayBody
+    if ([string]::IsNullOrWhiteSpace($liveGatewayResponse.text) -or `
+            $liveGatewayResponse.provider -notin @("openai", "gemini") -or `
+            $liveGatewayResponse.total_tokens -le 0 -or `
+            $liveGatewayResponse.estimated_cost_microusd -gt 2000) {
+        throw "Budgeted live model request did not return valid accounted output"
+    }
+    if ($liveGatewayResponse.provider -eq "openai" -and -not $openAiValidation.valid) {
+        throw "Live request reported success from an invalid OpenAI configuration"
+    }
+    if (-not $openAiValidation.valid -and `
+            ($liveGatewayResponse.provider -ne "gemini" -or `
+                -not $liveGatewayResponse.fallback_used)) {
+        throw "Invalid OpenAI primary did not fall back to validated Gemini"
+    }
+    $persistedGatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
+        -WebSession $ownerSession
+    if ($persistedGatewayDashboard.usage.calls -ne 1 -or `
+            $persistedGatewayDashboard.usage.total_tokens -le 0 -or `
+            $persistedGatewayDashboard.recent_calls.Count -lt 1) {
+        throw "Successful live model usage was not persisted"
+    }
+
     $workspacePage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/workspace" -WebSession $ownerWebSession
     if (-not $workspacePage.Content.Contains("Create another business")) {
@@ -587,6 +702,12 @@ try {
     if (-not $settingsPage.Content.Contains("Owner settings")) {
         throw "Authenticated security settings did not render"
     }
+    $aiSettingsPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/settings/ai" -WebSession $ownerWebSession
+    if (-not $aiSettingsPage.Content.Contains("Provider-independent AI routing") -or `
+            -not $aiSettingsPage.Content.Contains("Run live gateway check")) {
+        throw "Protected model gateway settings did not render"
+    }
 
     Assert-HttpStatus -ExpectedStatus 403 -Request {
         Invoke-WebRequest -UseBasicParsing `
@@ -630,8 +751,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_04") {
-        throw "Isolated Phase 04 migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_05") {
+        throw "Isolated Phase 05 migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -658,6 +779,20 @@ try {
     if ($LASTEXITCODE -ne 0 -or `
             $approvedProfileEvidence.Trim() -ne "1|2|A revised founder-approved operating profile") {
         throw "Founder-approved profile evidence is incorrect"
+    }
+    $gatewayUsageEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT count(*) || '|' || count(*) FILTER (WHERE status = 'succeeded') || '|' || coalesce(sum(total_tokens), 0) FROM model_gateway_calls WHERE business_id = '$businessBId'"
+    $gatewayUsageParts = $gatewayUsageEvidence.Trim().Split("|")
+    if ($LASTEXITCODE -ne 0 -or $gatewayUsageParts.Count -ne 3 -or `
+            [int]$gatewayUsageParts[0] -lt 1 -or [int]$gatewayUsageParts[1] -ne 1 -or `
+            [int]$gatewayUsageParts[2] -le 0) {
+        throw "Persisted model usage evidence is incorrect"
+    }
+    $providerValidationCount = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc "SELECT count(*) FROM model_provider_validations"
+    if ($LASTEXITCODE -ne 0 -or $providerValidationCount.Trim() -ne "3") {
+        throw "Expected all provider validation outcomes to be persisted"
     }
 }
 finally {
@@ -688,6 +823,7 @@ finally {
     $foundationForm = $null
     $foundationMultipart = $null
     $foundationMultipartBytes = $null
+    $liveGatewayBody = $null
 }
 
 $webResponse = Invoke-WebRequest -UseBasicParsing -Uri "$publicOrigin/login"
@@ -710,8 +846,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_04") {
-    throw "Phase 04 migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_05") {
+    throw "Phase 05 migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

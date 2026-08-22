@@ -6,7 +6,6 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 |---|---:|---|
 | Which founder-owned business will be the first real launch? | Required for Phase 61 | Keep the business registry and onboarding generic; do not seed demo assumptions |
 | Which production deployment target should be selected? | Phase 59 | Continue with provider-independent Linux containers and environment-based configuration |
-| Which AI providers and budgets will the founder configure first? | Phase 05 | All providers disabled without valid credentials; no mock AI output |
 | Which search provider is preferred and what research budget is acceptable? | Phase 16 | No external research claims until a provider/tool is configured |
 | Which object-storage provider should back production assets? | Phase 13/26 and Phase 59 | Use an abstraction; local development storage only when explicitly labeled |
 | Which preview/deployment and DNS providers are preferred? | Phase 24/25 | Local build/preview only; never claim deployment or DNS state |
@@ -24,5 +23,11 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 5. Phase 03 stores the selected business on each owner session. Operational routes never accept an arbitrary business ID; only the explicit switch operation does.
 6. Phase 04 keeps mutable onboarding drafts separate from versioned approved profiles. No draft or future AI suggestion becomes fact without explicit founder approval.
 7. Connected services entered during onboarding are founder declarations only. Provider credential validation and real connection state belong to their later provider phases.
+8. Phase 05 starts with OpenAI as primary, Gemini then Anthropic as fallbacks for
+   explicitly standard-sensitivity requests. The founder configured OpenAI and
+   Gemini locally; Anthropic remains cleanly disabled until a key is supplied.
+   Per-request defaults are 512 output tokens, 8,192 total tokens, and $0.10
+   estimated cost, with a hard 4,096 output-token ceiling. Later policy phases may
+   add action/day/provider budgets without bypassing these gateway limits.
 
 Other questions can remain open until their named phase.

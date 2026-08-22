@@ -508,6 +508,124 @@ button:hover {
   font-size: 0.72rem;
 }
 
+.ai-settings-shell {
+  gap: 26px;
+}
+
+.ai-summary,
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.ai-summary article {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-summary span,
+.provider-card p {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.ai-summary strong {
+  font-size: clamp(1.4rem, 4vw, 2.4rem);
+}
+
+.provider-grid {
+  margin-top: 20px;
+}
+
+.provider-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.provider-card > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.provider-card h3,
+.provider-card p {
+  margin: 0;
+}
+
+.provider-card code,
+table code {
+  overflow-wrap: anywhere;
+}
+
+.status-pill {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.status-pill--active {
+  color: var(--accent);
+  border-color: rgba(217, 255, 99, 0.45);
+}
+
+.status-pill--muted {
+  color: var(--muted);
+}
+
+.compact-definition {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-definition div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+}
+
+.compact-definition dt {
+  color: var(--muted);
+}
+
+.compact-definition dd {
+  margin: 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 18px;
+  font-size: 0.78rem;
+}
+
+th,
+td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .session-list span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -599,6 +717,15 @@ li {
   }
 
   .wizard-progress {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-summary,
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-definition div {
     grid-template-columns: 1fr;
   }
 
