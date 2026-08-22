@@ -2,9 +2,9 @@
 
 ## Current architecture
 
-Phase 01 implements the portable foundation as a modular monorepo:
+The implementation through Phase 03 is a portable modular monorepo:
 
-- `apps/web`: a standalone-output Next.js process that reports only live API readiness state;
+- `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
 - `apps/api`: a separately runnable RQ worker consuming the Redis-backed `foundora` queue;
 - Alembic: a gated migration process that must complete before API and worker startup;
@@ -44,7 +44,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 02
+## Implemented foundation through Phase 03
 
 The verified baseline is:
 
@@ -60,6 +60,10 @@ The verified baseline is:
 - PostgreSQL-backed opaque sessions with CSRF tokens, expiration, rotation, and revocation;
 - Redis-backed login throttling, exact-origin enforcement, and hardened HTTP response headers;
 - a server-rendered login boundary and protected owner security settings.
+- a business workspace service that resolves operational state exclusively through the authenticated session's selected business;
+- durable business profiles, lifecycle status and archive state, validated timezone/currency/locale preferences, and goals;
+- per-session business selection, with owner checks on every operational query and selection cleared across sessions when a business is archived;
+- a protected server-rendered workspace for creating, switching, and maintaining multiple businesses.
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 

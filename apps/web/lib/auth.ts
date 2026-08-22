@@ -104,7 +104,7 @@ export async function getActiveSessions(): Promise<SessionView[] | null> {
 
 export async function authenticatedApiRequest(
   path: string,
-  body: Record<string, string> | undefined,
+  body: Record<string, string | null> | undefined,
 ): Promise<Response> {
   const store = await cookies();
   const session = store.get(sessionCookieName)?.value;

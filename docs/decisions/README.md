@@ -9,5 +9,6 @@
 | [ADR-0005](ADR-0005-rq-worker.md) | Redis Queue for the foundation worker | Accepted |
 | [ADR-0006](ADR-0006-portable-container-runtime.md) | Portable containers and deferred deployment provider | Accepted |
 | [ADR-0007](ADR-0007-single-owner-password-auth.md) | Single-owner password authentication with opaque sessions | Accepted |
+| [ADR-0008](ADR-0008-session-selected-business-context.md) | Session-selected business context and strict operational scoping | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

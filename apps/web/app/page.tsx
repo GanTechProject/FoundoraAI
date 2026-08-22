@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const authenticated = await getAuthSession();
-  redirect(authenticated ? "/settings/security" : "/login");
+  redirect(authenticated ? "/workspace" : "/login");
 }

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getActiveSessions, getAuthSession } from "../../../lib/auth";
@@ -44,11 +45,16 @@ export default async function SecuritySettingsPage({
           <h1>Owner settings</h1>
           <p className="lede">Authenticated as {auth.owner.email}</p>
         </div>
-        <form action={logout}>
-          <button className="button-secondary" type="submit">
-            Sign out
-          </button>
-        </form>
+        <nav className="header-actions" aria-label="Owner navigation">
+          <Link className="text-link" href="/workspace">
+            Business workspace
+          </Link>
+          <form action={logout}>
+            <button className="button-secondary" type="submit">
+              Sign out
+            </button>
+          </form>
+        </nav>
       </header>
 
       {error && errors[error] ? (

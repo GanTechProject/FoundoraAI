@@ -90,7 +90,8 @@ h2 {
 }
 
 .auth-shell,
-.settings-shell {
+.settings-shell,
+.workspace-shell {
   width: min(1120px, calc(100% - 40px));
   margin: 0 auto;
 }
@@ -108,6 +109,103 @@ h2 {
   min-height: 100vh;
   padding: 8vh 0;
   display: block;
+}
+
+.workspace-shell {
+  min-height: 100vh;
+  padding: 7vh 0;
+  display: block;
+}
+
+.workspace-header {
+  display: flex;
+  gap: 32px;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 40px;
+}
+
+.workspace-header h1 {
+  margin-bottom: 16px;
+  font-size: clamp(2.8rem, 6vw, 5.5rem);
+}
+
+.header-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.text-link {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.context-bar {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  background: rgba(23, 24, 20, 0.72);
+}
+
+.context-bar h2,
+.context-bar .eyebrow {
+  margin-bottom: 0;
+}
+
+.context-bar .eyebrow {
+  margin-bottom: 8px;
+}
+
+.business-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.business-switcher form,
+.header-actions form {
+  display: block;
+}
+
+.business-switcher button,
+.header-actions button {
+  margin-top: 0;
+}
+
+.context-active,
+.context-active:disabled {
+  color: #10120b;
+  background: var(--accent);
+  cursor: default;
+  opacity: 1;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.panel--wide {
+  grid-column: 1 / -1;
+}
+
+.panel--danger {
+  border-color: rgba(255, 117, 109, 0.35);
+}
+
+.button-danger {
+  border-color: var(--danger);
+  color: #160706;
+  background: var(--danger);
 }
 
 .settings-header {
@@ -151,7 +249,9 @@ label {
   text-transform: uppercase;
 }
 
-input {
+input,
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 2px;
@@ -161,10 +261,67 @@ input {
   font: inherit;
 }
 
-input:focus {
+textarea {
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
   border-color: var(--accent);
   outline: 2px solid rgba(217, 255, 99, 0.18);
   outline-offset: 1px;
+}
+
+.goal-form {
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 0.6fr);
+  align-items: end;
+}
+
+.goal-form > div {
+  display: grid;
+  gap: 12px;
+}
+
+.goal-form .goal-details,
+.goal-form > button {
+  grid-column: 1 / -1;
+}
+
+.goal-list,
+.archived-list {
+  margin-top: 28px;
+}
+
+.goal-list li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.goal-list li > div {
+  display: grid;
+  gap: 7px;
+}
+
+.goal-list span,
+.goal-list time {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.goal-list form {
+  grid-template-columns: minmax(130px, 1fr) auto;
+  align-items: center;
+}
+
+.goal-list button {
+  margin-top: 0;
+}
+
+.archived-list li {
+  grid-template-columns: 1fr auto;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 button {
@@ -308,5 +465,21 @@ li {
   .settings-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .workspace-header,
+  .context-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace-grid,
+  .goal-form {
+    grid-template-columns: 1fr;
+  }
+
+  .goal-form .goal-details,
+  .goal-form > button {
+    grid-column: auto;
   }
 }

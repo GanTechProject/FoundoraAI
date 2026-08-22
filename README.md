@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable Phase 01 runtime and the Phase 02 owner authentication and security base: one owner account, secure password authentication, revocable sessions, protected settings, security headers, CSRF protection, and Redis-backed login throttling.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, and the Phase 03 multi-business workspace. The founder can create, switch, profile, status, archive, configure, and set goals for independent businesses without introducing SaaS tenancy.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -69,7 +69,9 @@ docker compose exec api python -m foundora.owner --email you@example.com --repla
 
 Do not place an owner password in `.env`, Compose, shell history, source code, or frontend configuration. The non-interactive `--password-env` option exists only for controlled automation such as the smoke suite; the named environment variable is read transiently and never persisted by Foundora.
 
-Open http://localhost:3000 after provisioning. Unauthenticated requests are redirected to the owner login page. Authenticated owners can change the password, inspect active sessions, revoke other sessions, and sign out at `/settings/security`.
+Open http://localhost:3000 after provisioning. Unauthenticated requests are redirected to the owner login page. Authenticated owners land at `/workspace`, where they can create and switch businesses, maintain each selected business's profile, lifecycle status, operating preferences, and goals, or archive it. Security controls remain available at `/settings/security`.
+
+Business selection is stored per authenticated session. Creating a first business selects it automatically; creating additional businesses does not silently change the current context. Archived businesses remain visible as historical registry entries but cannot be selected. Phase 03 has no demo business seed and does not assume which real business the founder will launch.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -89,7 +91,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication smoke checks use temporary isolated databases and containers that are removed automatically, so an existing development owner is not modified. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication and business-isolation smoke checks use temporary isolated databases and containers that are removed automatically, so an existing development owner or its businesses are not modified. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 ## Repository shape
 
@@ -101,4 +103,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business-domain tables and product behavior remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business profiles, preferences, goals, and per-session selection are durable PostgreSQL records. Business onboarding and later operational domains remain deferred to their authorized phases.

@@ -125,6 +125,12 @@ try {
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/auth/session"
     }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/businesses"
+    }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/workspace"
+    }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
         ConvertTo-Json -Compress
@@ -162,8 +168,8 @@ try {
         -Method Post -Headers @{ Origin = $smokePublicOrigin } `
         -ContentType "multipart/form-data; boundary=$boundary" -Body $multipartBytes `
         -SessionVariable ownerWebSession
-    if (-not $webLoginResponse.Content.Contains("Owner settings")) {
-        throw "Owner login through the web form did not reach protected settings"
+    if (-not $webLoginResponse.Content.Contains("Choose your business context")) {
+        throw "Owner login through the web form did not reach the protected workspace"
     }
 
     $loginBody = @{ email = $ownerEmail; password = $smokePassword } | ConvertTo-Json -Compress
@@ -182,12 +188,6 @@ try {
         throw "Authenticated owner identity mismatch"
     }
 
-    $settingsPage = Invoke-WebRequest -UseBasicParsing `
-        -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
-    if (-not $settingsPage.Content.Contains("Owner settings")) {
-        throw "Authenticated security settings did not render"
-    }
-
     $csrfCookie = $ownerSession.Cookies.GetCookies($smokeApiOrigin) | `
         Where-Object { $_.Name -eq "csrf" } | Select-Object -First 1
     $sessionCookie = $ownerSession.Cookies.GetCookies($smokeApiOrigin) | `
@@ -197,10 +197,167 @@ try {
     }
     $oldSessionToken = $sessionCookie.Value
 
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/workspace" `
+            -WebSession $ownerSession
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/businesses" `
+            -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ name = "Rejected $runId"; summary = "Missing CSRF" } | ConvertTo-Json -Compress)
+    }
+
+    $businessAName = "Alpha $runId"
+    $businessBName = "Beta $runId"
+    $businessAResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/businesses" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ name = $businessAName; summary = "Alpha-only profile" } | ConvertTo-Json -Compress)
+    $businessAId = [string]$businessAResponse.id
+    if (-not $businessAResponse.selected) {
+        throw "The first business was not selected automatically"
+    }
+
+    $goalAResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/goals" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ title = "Alpha-only goal"; details = "Must never appear in Beta"; target_date = $null } | ConvertTo-Json -Compress)
+    if ($goalAResponse.title -ne "Alpha-only goal") { throw "Alpha goal was not created" }
+
+    $businessBResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/businesses" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ name = $businessBName; summary = "Beta-only profile" } | ConvertTo-Json -Compress)
+    $businessBId = [string]$businessBResponse.id
+
+    $stillAlpha = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace" -WebSession $ownerSession
+    if ($stillAlpha.business.id -ne $businessAId -or $stillAlpha.goals.Count -ne 1) {
+        throw "Creating a second business changed or mixed the selected context"
+    }
+
+    Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ business_id = $businessBId } | ConvertTo-Json -Compress) | Out-Null
+    $betaWorkspace = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace" -WebSession $ownerSession
+    if ($betaWorkspace.business.id -ne $businessBId -or $betaWorkspace.business.summary -ne "Beta-only profile") {
+        throw "Business switching did not resolve the Beta profile"
+    }
+    if ($betaWorkspace.goals.Count -ne 0) {
+        throw "Alpha operational data leaked into the Beta workspace"
+    }
+
+    $preferencesResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/preferences" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ timezone = "Asia/Kolkata"; currency = "INR"; locale = "en-IN" } | ConvertTo-Json -Compress)
+    if ($preferencesResponse.currency -ne "INR") { throw "Business preferences were not updated" }
+
+    $statusResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/status" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ status = "active" } | ConvertTo-Json -Compress)
+    if ($statusResponse.status -ne "active") { throw "Business status was not updated" }
+
+    $goalBResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/goals" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ title = "Beta-only goal"; details = "Must never appear in Alpha"; target_date = "2026-12-31" } | ConvertTo-Json -Compress)
+    $goalBId = [string]$goalBResponse.id
+
+    Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ business_id = $businessAId } | ConvertTo-Json -Compress) | Out-Null
+    $alphaWorkspace = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace" -WebSession $ownerSession
+    if ($alphaWorkspace.business.id -ne $businessAId -or $alphaWorkspace.goals.Count -ne 1) {
+        throw "Switching back did not restore the isolated Alpha workspace"
+    }
+    if ($alphaWorkspace.goals[0].title -ne "Alpha-only goal") {
+        throw "Beta goal leaked into the Alpha workspace"
+    }
+    Assert-HttpStatus -ExpectedStatus 404 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/workspace/goals/$goalBId/status" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ status = "completed" } | ConvertTo-Json -Compress)
+    }
+
+    $archiveResponse = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace/archive" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -WebSession $ownerSession
+    if ($archiveResponse.id -ne $businessAId -or -not $archiveResponse.archived_at) {
+        throw "Selected business was not archived"
+    }
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/workspace" `
+            -WebSession $ownerSession
+    }
+    Assert-HttpStatus -ExpectedStatus 404 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/businesses/select" `
+            -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ business_id = $businessAId } | ConvertTo-Json -Compress)
+    }
+    Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ business_id = $businessBId } | ConvertTo-Json -Compress) | Out-Null
+
+    $workspacePage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/workspace" -WebSession $ownerWebSession
+    if (-not $workspacePage.Content.Contains("Create another business")) {
+        throw "Authenticated business workspace did not render"
+    }
+    $createFormMatch = [regex]::Match(
+        $workspacePage.Content,
+        '<form[^>]*>(?:(?!</form>)[\s\S])*?id="create-name"(?:(?!</form>)[\s\S])*?</form>'
+    )
+    if (-not $createFormMatch.Success) { throw "Business creation form was not rendered" }
+    $createActionMatch = [regex]::Match(
+        $createFormMatch.Value,
+        'name="(?<name>\$ACTION_ID_[A-Za-z0-9]+)"'
+    )
+    if (-not $createActionMatch.Success) { throw "Business creation action was not rendered" }
+    $webBusinessName = "Web $runId"
+    $businessForm = @{ name = $webBusinessName; summary = "Created through the real web action" }
+    $businessForm[$createActionMatch.Groups["name"].Value] = ""
+    $businessBoundary = "foundora-business-$([guid]::NewGuid().ToString('N'))"
+    $businessMultipart = [Text.StringBuilder]::new()
+    foreach ($field in $businessForm.GetEnumerator()) {
+        [void]$businessMultipart.Append("--$businessBoundary`r`n")
+        [void]$businessMultipart.Append("Content-Disposition: form-data; name=`"$($field.Key)`"`r`n`r`n")
+        [void]$businessMultipart.Append("$($field.Value)`r`n")
+    }
+    [void]$businessMultipart.Append("--$businessBoundary--`r`n")
+    $businessMultipartBytes = [Text.Encoding]::UTF8.GetBytes($businessMultipart.ToString())
+    $webBusinessResponse = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/workspace" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin } `
+        -ContentType "multipart/form-data; boundary=$businessBoundary" `
+        -Body $businessMultipartBytes -WebSession $ownerWebSession
+    if (-not $webBusinessResponse.Content.Contains($webBusinessName)) {
+        throw "Business creation through the web action did not select its workspace"
+    }
+    $apiSessionStillBeta = Invoke-RestMethod -Uri "$smokeApiOrigin/workspace" `
+        -WebSession $ownerSession
+    if ($apiSessionStillBeta.business.id -ne $businessBId) {
+        throw "Business selection leaked between independent owner sessions"
+    }
+
+    $settingsPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
+    if (-not $settingsPage.Content.Contains("Owner settings")) {
+        throw "Authenticated security settings did not render"
+    }
+
     Assert-HttpStatus -ExpectedStatus 403 -Request {
         Invoke-WebRequest -UseBasicParsing `
             -Uri "$smokeApiOrigin/auth/sessions/revoke-others" -Method Post `
-            -Headers @{ Origin = $smokePublicOrigin } -WebSession $ownerSession
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -WebSession $ownerSession
     }
 
     $passwordBody = @{
@@ -238,13 +395,23 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_02") {
-        throw "Isolated Phase 02 migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_03") {
+        throw "Isolated Phase 03 migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
     if ($LASTEXITCODE -ne 0 -or $ownerCount.Trim() -ne "1") {
         throw "Exactly one Argon2id owner credential was not found"
+    }
+    $businessCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
+        -tAc "SELECT count(*) FROM businesses"
+    if ($LASTEXITCODE -ne 0 -or $businessCount.Trim() -ne "3") {
+        throw "Expected three isolated smoke businesses"
+    }
+    $crossBusinessGoalCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
+        -tAc "SELECT count(*) FROM business_goals g JOIN businesses b ON b.id = g.business_id WHERE (b.name = '$businessAName' AND g.title = 'Beta-only goal') OR (b.name = '$businessBName' AND g.title = 'Alpha-only goal')"
+    if ($LASTEXITCODE -ne 0 -or $crossBusinessGoalCount.Trim() -ne "0") {
+        throw "Goal persistence crossed a business boundary"
     }
 }
 finally {
@@ -269,6 +436,9 @@ finally {
     $multipartBytes = $null
     $rateLimitEmail = $null
     $oldSessionToken = $null
+    $businessForm = $null
+    $businessMultipart = $null
+    $businessMultipartBytes = $null
 }
 
 $webResponse = Invoke-WebRequest -UseBasicParsing -Uri "$publicOrigin/login"
@@ -291,8 +461,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_02") {
-    throw "Phase 02 migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_03") {
+    throw "Phase 03 migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 
