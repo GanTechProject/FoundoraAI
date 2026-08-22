@@ -320,6 +320,92 @@ try {
         -Body (@{ title = "Beta-only goal"; details = "Must never appear in Alpha"; target_date = "2026-12-31" } | ConvertTo-Json -Compress)
     $goalBId = [string]$goalBResponse.id
 
+    $blockerTask = Invoke-RestMethod -Uri "$smokeApiOrigin/tasks" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            title = "Approve launch brief"
+            description = "Durable dependency for Phase 09 acceptance"
+            goal_id = $goalBId
+            priority = 1
+            owner_type = "founder"
+            owner_agent_id = $null
+            due_at = "2026-12-01T09:00:00Z"
+            max_retries = 0
+        } | ConvertTo-Json -Compress)
+    $blockerTaskId = [string]$blockerTask.id
+    $dependentTask = Invoke-RestMethod -Uri "$smokeApiOrigin/tasks" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            title = "Publish launch brief"
+            description = "Must wait for approval task"
+            goal_id = $goalBId
+            priority = 2
+            owner_type = "agent"
+            owner_agent_id = "runtime-verification-agent"
+            due_at = $null
+            max_retries = 2
+        } | ConvertTo-Json -Compress)
+    $dependentTaskId = [string]$dependentTask.id
+    $dependentTask = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/tasks/$dependentTaskId/dependencies" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ depends_on_task_id = $blockerTaskId } | ConvertTo-Json -Compress)
+    if ($dependentTask.dependencies.Count -ne 1 -or `
+            $dependentTask.blocked_by.Count -ne 1 -or `
+            -not $dependentTask.owner_agent_version_id) {
+        throw "Task dependency or pinned agent owner was not persisted"
+    }
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/tasks/$blockerTaskId/dependencies" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ depends_on_task_id = $dependentTaskId } | ConvertTo-Json -Compress)
+    }
+    Invoke-RestMethod -Uri "$smokeApiOrigin/tasks/$dependentTaskId/status" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ status = "planned" } | ConvertTo-Json -Compress) | Out-Null
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/tasks/$dependentTaskId/status" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ status = "queued" } | ConvertTo-Json -Compress)
+    }
+    foreach ($nextState in @("planned", "queued", "running", "completed")) {
+        $blockerTask = Invoke-RestMethod `
+            -Uri "$smokeApiOrigin/tasks/$blockerTaskId/status" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ status = $nextState } | ConvertTo-Json -Compress)
+    }
+    foreach ($nextState in @("queued", "running", "failed")) {
+        $transitionBody = @{ status = $nextState }
+        if ($nextState -eq "failed") { $transitionBody.error = "Deterministic smoke failure" }
+        $dependentTask = Invoke-RestMethod `
+            -Uri "$smokeApiOrigin/tasks/$dependentTaskId/status" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body ($transitionBody | ConvertTo-Json -Compress)
+    }
+    $taskRetryKey = "smoke:$runId:dependent-retry"
+    $taskRetryBody = @{ idempotency_key = $taskRetryKey } | ConvertTo-Json -Compress
+    $retriedTask = Invoke-RestMethod -Uri "$smokeApiOrigin/tasks/$dependentTaskId/retry" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession -Body $taskRetryBody
+    $duplicateRetry = Invoke-RestMethod -Uri "$smokeApiOrigin/tasks/$dependentTaskId/retry" `
+        -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession -Body $taskRetryBody
+    if ($retriedTask.status -ne "queued" -or $retriedTask.retry_count -ne 1 -or `
+            $duplicateRetry.retry_count -ne 1 -or `
+            @($duplicateRetry.events | Where-Object { $_.event_type -eq "retried" }).Count -ne 1) {
+        throw "Task retry was not atomic and idempotent"
+    }
+
     Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
         -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
         -ContentType "application/json" -WebSession $ownerSession `
@@ -337,6 +423,10 @@ try {
             -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
             -ContentType "application/json" -WebSession $ownerSession `
             -Body (@{ status = "completed" } | ConvertTo-Json -Compress)
+    }
+    Assert-HttpStatus -ExpectedStatus 404 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/tasks/$dependentTaskId" `
+            -WebSession $ownerSession
     }
 
     $newOnboarding = Invoke-RestMethod -Uri "$smokeApiOrigin/onboarding" `
@@ -999,6 +1089,13 @@ try {
             -not $webAgentsPage.Content.Contains("Analyze Provided Data")) {
         throw "Protected agent registry and permission boundary did not render"
     }
+    $webTasksPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/tasks" -WebSession $ownerWebSession
+    if (-not $webTasksPage.Content.Contains("Durable work, explicit dependencies") -or `
+            -not $webTasksPage.Content.Contains("Persist draft task") -or `
+            -not $webTasksPage.Content.Contains("Tasks by priority and due date")) {
+        throw "Protected task ledger did not render"
+    }
 
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
@@ -1054,8 +1151,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_07") {
-        throw "Isolated Phase 08 migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260822_08") {
+        throw "Isolated Phase 09 migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -1071,6 +1168,12 @@ try {
         -tAc "SELECT count(*) FROM business_goals g JOIN businesses b ON b.id = g.business_id WHERE (b.name = '$businessAName' AND g.title = 'Beta-only goal') OR (b.name = '$businessBName' AND g.title = 'Alpha-only goal')"
     if ($LASTEXITCODE -ne 0 -or $crossBusinessGoalCount.Trim() -ne "0") {
         throw "Goal persistence crossed a business boundary"
+    }
+    $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM tasks WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM task_dependencies) || '|' || (SELECT count(*) FROM task_events WHERE task_id = '$dependentTaskId' AND event_type = 'retried') || '|' || (SELECT retry_count FROM tasks WHERE id = '$dependentTaskId')"
+    if ($LASTEXITCODE -ne 0 -or $taskEngineEvidence.Trim() -ne "2|1|1|1") {
+        throw "Durable task, dependency, event, or idempotent retry evidence is incorrect"
     }
     $onboardingDraftCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM business_onboarding_drafts"
@@ -1201,8 +1304,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_07") {
-    throw "Phase 08 migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260822_08") {
+    throw "Phase 09 migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

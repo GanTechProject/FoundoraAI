@@ -79,6 +79,9 @@ export default async function WorkspacePage({
               <Link className="text-link" href="/agents">
                 Agents
               </Link>
+              <Link className="text-link" href="/tasks">
+                Tasks
+              </Link>
               <Link className="text-link" href="/settings/ai">
                 AI gateway
               </Link>

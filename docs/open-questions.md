@@ -52,5 +52,14 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 15. The three initial skills are R0 and tool-free. Only the business-context summary
     skill is assigned to runtime agent version 2. Skill workflow fields are
     declarative contracts, not the Phase 10 executable workflow engine.
+16. Phase 09 reuses selected-business `business_goals` and links tasks to them
+    without creating a second goal authority. Agent task owners pin the current
+    immutable agent version at creation.
+17. Task dependency and state mutations are transactional. Queue/run states require
+    completed dependencies; retry is failed-only, budgeted, dependency-gated, and
+    idempotent by a caller-supplied key.
+18. Task events are append-only aggregate history, not the Phase 12 event bus.
+    `waiting_approval` records lifecycle state but cannot grant approval before
+    the Phase 11 governance runtime exists.
 
 Other questions can remain open until their named phase.

@@ -10,6 +10,7 @@ export const contextSourceTypes = [
   "brand",
   "operating_context",
   "operational_goals",
+  "current_tasks",
 ] as const;
 
 export type ContextSourceType = (typeof contextSourceTypes)[number];

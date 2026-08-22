@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent runtime, and the Phase 08 immutable skill registry.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, and the Phase 09 durable task engine.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -96,7 +96,16 @@ failure, cancellation timestamps, and linked usage attempts. The built-in agent 
 R0 and manual-run-only, with no tools or external side effects. Its version 2 may
 invoke only the assigned `summarize-business-context@1` contract. The registry also
 exposes harmless structured-plan and provided-data analysis skills, but compatibility
-does not authorize them. The schema head is `20260822_07`.
+does not authorize them.
+
+Open `/tasks` to create selected-business draft tasks, optionally link them to an
+existing goal, set priority and due date, and assign the founder or a current
+version-pinned agent. The task inspector exposes valid lifecycle transitions,
+dependency blockers, retry budget, and append-only events. A task cannot be queued
+or run until all dependencies are complete; dependency cycles and cross-business
+references are rejected. Failed-task retry is bounded and idempotent. This phase
+records queued work but does not execute a workflow or grant an approval. The
+schema head is `20260822_08`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -116,7 +125,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, and assigned-skill boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, and task persistence/dependency/retry smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phase 09 itself makes no provider call. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 ## Repository shape
 
@@ -128,4 +137,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business workspaces, onboarding drafts, founder-approved profiles, agent and skill definitions and versions, exact assignments, agent runs and messages, and model usage are durable PostgreSQL records. Business-brain context remains derived from authoritative selected-business records. Task, workflow, policy, tool, and later operational domains remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business workspaces, onboarding drafts, founder-approved profiles, agent and skill definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, and model usage are durable PostgreSQL records. Business-brain context remains derived from authoritative selected-business records. Workflow, policy, tool, and later operational domains remain deferred to their authorized phases.

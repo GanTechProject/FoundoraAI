@@ -20,6 +20,7 @@ const sourceLabels: Record<ContextSourceType, string> = {
   brand: "Brand",
   operating_context: "Assets / constraints",
   operational_goals: "Operational goals",
+  current_tasks: "Current tasks",
 };
 
 function selectedSources(value: string | string[] | undefined) {
@@ -101,6 +102,9 @@ export default async function BusinessBrainPage({
           </Link>
           <Link className="text-link" href="/agents">
             Agents
+          </Link>
+          <Link className="text-link" href="/tasks">
+            Tasks
           </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">

@@ -349,6 +349,100 @@ export async function cancelAgentRun(runId: string): Promise<never> {
   redirect(`/agents?run=${encodeURIComponent(runId)}&updated=cancelled`);
 }
 
+function taskError(response: Response): string {
+  if (response.status === 404) return "not-found";
+  if (response.status === 409) return "conflict";
+  if (response.status === 422) return "invalid";
+  return "unavailable";
+}
+
+async function taskMutation(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  try {
+    return await authenticatedApiRequest(path, body);
+  } catch {
+    redirect("/tasks?error=unavailable");
+  }
+}
+
+export async function createTask(formData: FormData): Promise<never> {
+  const dueAt = field(formData, "due_at");
+  const ownerValue = field(formData, "owner");
+  const ownerType = ownerValue.startsWith("agent:") ? "agent" : ownerValue;
+  const response = await taskMutation("/tasks", {
+    title: field(formData, "title"),
+    description: field(formData, "description"),
+    goal_id: field(formData, "goal_id") || null,
+    priority: Number(field(formData, "priority")),
+    owner_type: ownerType,
+    owner_agent_id:
+      ownerType === "agent" ? ownerValue.slice("agent:".length) : null,
+    due_at: dueAt ? new Date(dueAt).toISOString() : null,
+    max_retries: Number(field(formData, "max_retries")),
+  });
+  if (!response.ok) redirect(`/tasks?error=${taskError(response)}`);
+  const value: unknown = await response.json();
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { id?: unknown }).id !== "string"
+  ) {
+    redirect("/tasks?error=unavailable");
+  }
+  redirect(`/tasks?task=${(value as { id: string }).id}&updated=created`);
+}
+
+export async function addTaskDependency(
+  taskId: string,
+  formData: FormData,
+): Promise<never> {
+  const response = await taskMutation(
+    `/tasks/${encodeURIComponent(taskId)}/dependencies`,
+    { depends_on_task_id: field(formData, "depends_on_task_id") },
+  );
+  if (!response.ok) {
+    redirect(
+      `/tasks?task=${encodeURIComponent(taskId)}&error=${taskError(response)}`,
+    );
+  }
+  redirect(`/tasks?task=${encodeURIComponent(taskId)}&updated=dependency`);
+}
+
+export async function transitionTask(
+  taskId: string,
+  formData: FormData,
+): Promise<never> {
+  const response = await taskMutation(
+    `/tasks/${encodeURIComponent(taskId)}/status`,
+    {
+      status: field(formData, "status"),
+      error: field(formData, "error") || null,
+    },
+  );
+  if (!response.ok) {
+    redirect(
+      `/tasks?task=${encodeURIComponent(taskId)}&error=${taskError(response)}`,
+    );
+  }
+  redirect(`/tasks?task=${encodeURIComponent(taskId)}&updated=transitioned`);
+}
+
+export async function retryTask(taskId: string): Promise<never> {
+  const idempotencyKey = `ui:${taskId}:${crypto.randomUUID()}`;
+  const response = await taskMutation(
+    `/tasks/${encodeURIComponent(taskId)}/retry`,
+    { idempotency_key: idempotencyKey },
+  );
+  if (!response.ok) {
+    redirect(
+      `/tasks?task=${encodeURIComponent(taskId)}&error=${taskError(response)}`,
+    );
+  }
+  redirect(`/tasks?task=${encodeURIComponent(taskId)}&updated=retried`);
+}
+
 export async function logout(): Promise<never> {
   try {
     await authenticatedApiRequest("/auth/logout", undefined);

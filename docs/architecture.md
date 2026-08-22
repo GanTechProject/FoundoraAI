@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 08 is a portable modular monorepo:
+The implementation through Phase 09 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -17,6 +17,9 @@ The implementation through Phase 08 is a portable modular monorepo:
   lifecycle, messages, failures, cancellation, and usage linkage;
 - an immutable skill registry with schema, compatibility, prerequisite, tool,
   permission, risk, fixture, rubric, and exact agent-version assignment contracts;
+- a transactional selected-business task engine with goal links, version-pinned
+  agent ownership, acyclic dependencies, explicit lifecycle, idempotent retries,
+  and append-only aggregate events;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -53,7 +56,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 08
+## Implemented foundation through Phase 09
 
 The verified baseline is:
 
@@ -107,6 +110,10 @@ The verified baseline is:
   rubrics;
 - exact agent-version-to-skill-version assignments, run-level skill pinning, and
   authorization/schema re-validation by both the API and worker;
+- durable tasks with priority, due dates, founder or exact-version agent owners,
+  goal links, dependency gates, safe retry budgets, and inspectable task events;
+- current task and dependency state as provenance-backed Business Brain context,
+  with completed and cancelled task history excluded as stale or invalidated;
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 
@@ -135,6 +142,8 @@ Dependencies should point inward toward domain contracts. Provider SDK types, OR
   historical execution contracts.
 - Invoking a skill requires an exact assignment to the pinned agent version;
   compatibility metadata alone never authorizes execution.
+- Entering queued or running task state requires completed dependencies, and a
+  retry idempotency key can consume at most one bounded retry.
 - One action must ultimately be traceable from UI request through task, agent, skill, tool/provider, and result.
 - Tests must include timeouts, retries, duplicates, partial workflow failure, worker interruption, and approval bypass attempts as the relevant phases arrive.
 

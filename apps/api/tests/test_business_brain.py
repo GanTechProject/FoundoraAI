@@ -13,11 +13,12 @@ from foundora.business_brain.service import (
     BusinessContext,
     ContextBuildRequest,
     ContextCandidate,
+    ContextService,
     ContextSourceDecision,
     select_context,
 )
 from foundora.main import app
-from foundora.models import Owner, OwnerSession
+from foundora.models import Owner, OwnerSession, Task
 
 
 def auth_context(business_id: uuid.UUID) -> AuthContext:
@@ -158,6 +159,46 @@ def test_selector_enforces_budget_and_produces_deterministic_provenance() -> Non
         unavailable_sources={"knowledge": "Unavailable"},
     )
     assert different_selection.context_id != all_selected_without_candidates.context_id
+
+
+def test_task_context_exposes_live_state_and_invalidates_terminal_history() -> None:
+    now = datetime(2026, 8, 22, tzinfo=UTC)
+    business_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+
+    def task(status: str) -> Task:
+        return Task(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            goal_id=None,
+            title=f"{status} task",
+            description="Task evidence",
+            priority=2,
+            owner_type="founder",
+            owner_agent_id=None,
+            owner_agent_version_id=None,
+            status=status,
+            due_at=None,
+            max_retries=1,
+            retry_count=0,
+            last_error=None,
+            created_by_owner_id=owner_id,
+            created_at=now,
+            updated_at=now,
+        )
+
+    current = task("queued")
+    completed = task("completed")
+    cancelled = task("cancelled")
+    candidates = ContextService._task_candidates(
+        [current, completed, cancelled],
+        {current.id: [{"task_id": str(uuid.uuid4()), "status": "completed", "satisfied": True}]},
+    )
+
+    assert "current_tasks" in SOURCE_TYPES
+    assert [item.validity for item in candidates] == ["current", "stale", "invalidated"]
+    assert candidates[0].authority == "task_engine"
+    assert candidates[0].content["dependencies"] != []
 
 
 def test_context_endpoint_exposes_provenance_for_selected_business() -> None:

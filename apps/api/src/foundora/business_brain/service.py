@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from foundora.auth.service import AuthContext
 from foundora.business.context import NoSelectedBusiness, resolve_selected_business
 from foundora.infrastructure.database import get_session_factory
-from foundora.models import ApprovedBusinessProfile, BusinessGoal, BusinessPreference
+from foundora.models import (
+    ApprovedBusinessProfile,
+    BusinessGoal,
+    BusinessPreference,
+    Task,
+    TaskDependency,
+)
 
 SourceType = Literal[
     "business_profile",
@@ -23,6 +29,7 @@ SourceType = Literal[
     "brand",
     "operating_context",
     "operational_goals",
+    "current_tasks",
 ]
 SourceValidity = Literal["current", "stale", "invalidated"]
 SelectionStatus = Literal["included", "excluded"]
@@ -36,6 +43,7 @@ SOURCE_TYPES: tuple[SourceType, ...] = (
     "brand",
     "operating_context",
     "operational_goals",
+    "current_tasks",
 )
 
 FUTURE_SOURCE_TYPES: dict[str, str] = {
@@ -43,7 +51,6 @@ FUTURE_SOURCE_TYPES: dict[str, str] = {
     "customers": "No customer domain exists before Phase 33.",
     "decisions": "No governed decision domain exists yet.",
     "knowledge": "No knowledge ingestion domain exists before Phase 13.",
-    "current_tasks": "No task engine exists before Phase 09.",
     "kpis": "No KPI domain exists before Phase 40.",
     "relevant_memories": "No memory system exists before Phase 14.",
 }
@@ -244,6 +251,29 @@ class ContextService:
                     .order_by(BusinessGoal.updated_at.desc(), BusinessGoal.id.asc())
                 )
             )
+            tasks = list(
+                await database.scalars(
+                    select(Task)
+                    .where(Task.business_id == business.id)
+                    .order_by(Task.priority, Task.updated_at.desc(), Task.id.asc())
+                )
+            )
+            task_ids = [task.id for task in tasks]
+            dependency_rows = (
+                (
+                    await database.execute(
+                        select(
+                            TaskDependency.task_id,
+                            TaskDependency.depends_on_task_id,
+                            Task.status,
+                        )
+                        .join(Task, Task.id == TaskDependency.depends_on_task_id)
+                        .where(TaskDependency.task_id.in_(task_ids))
+                    )
+                ).all()
+                if task_ids
+                else []
+            )
 
         candidates = [
             ContextCandidate(
@@ -285,6 +315,18 @@ class ContextService:
         candidates.extend(self._goal_candidates(goals))
         if not goals:
             unavailable["operational_goals"] = "No business goals are recorded."
+        dependencies_by_task: dict[uuid.UUID, list[dict[str, object]]] = {}
+        for task_id, dependency_id, dependency_status in dependency_rows:
+            dependencies_by_task.setdefault(task_id, []).append(
+                {
+                    "task_id": str(dependency_id),
+                    "status": dependency_status,
+                    "satisfied": dependency_status == "completed",
+                }
+            )
+        candidates.extend(self._task_candidates(tasks, dependencies_by_task))
+        if not tasks:
+            unavailable["current_tasks"] = "No tasks are recorded."
         return select_context(
             business_id=business.id,
             request=request,
@@ -375,6 +417,47 @@ class ContextService:
                             goal.target_date.isoformat() if goal.target_date is not None else None
                         ),
                         "status": goal.status,
+                    },
+                )
+            )
+        return result
+
+    @staticmethod
+    def _task_candidates(
+        tasks: list[Task], dependencies_by_task: dict[uuid.UUID, list[dict[str, object]]]
+    ) -> list[ContextCandidate]:
+        result: list[ContextCandidate] = []
+        for task in tasks:
+            validity: SourceValidity = "current"
+            if task.status == "completed":
+                validity = "stale"
+            elif task.status == "cancelled":
+                validity = "invalidated"
+            result.append(
+                ContextCandidate(
+                    source_type="current_tasks",
+                    source_reference=f"tasks/{task.id}",
+                    source_version=task.updated_at.astimezone(UTC).isoformat(),
+                    authority="task_engine",
+                    label=task.title,
+                    updated_at=task.updated_at,
+                    validity=validity,
+                    content={
+                        "title": task.title,
+                        "description": task.description,
+                        "goal_id": str(task.goal_id) if task.goal_id is not None else None,
+                        "priority": task.priority,
+                        "owner_type": task.owner_type,
+                        "owner_agent_id": task.owner_agent_id,
+                        "status": task.status,
+                        "due_at": (
+                            task.due_at.astimezone(UTC).isoformat()
+                            if task.due_at is not None
+                            else None
+                        ),
+                        "retry_count": task.retry_count,
+                        "max_retries": task.max_retries,
+                        "dependencies": dependencies_by_task.get(task.id, []),
                     },
                 )
             )

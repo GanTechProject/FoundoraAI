@@ -701,6 +701,41 @@ table code {
   gap: 20px;
 }
 
+.tasks-shell {
+  max-width: 1440px;
+}
+
+.task-form {
+  max-width: none;
+}
+
+.task-form .settings-grid label,
+.task-inspector .workspace-form {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.task-inspector {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.task-detail-grid article {
+  min-width: 0;
+}
+
+.event-list {
+  display: grid;
+  gap: 0.65rem;
+  padding-left: 1.3rem;
+}
+
+.event-list span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .agent-card__heading,
 .run-actions {
   display: flex;

@@ -352,6 +352,104 @@ class AgentMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class Task(Base):
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'planned', 'queued', 'running', 'blocked', "
+            "'waiting_approval', 'completed', 'failed', 'cancelled')",
+            name="ck_tasks_status",
+        ),
+        CheckConstraint("priority BETWEEN 1 AND 5", name="ck_tasks_priority"),
+        CheckConstraint(
+            "owner_type IN ('unassigned', 'founder', 'agent')",
+            name="ck_tasks_owner_type",
+        ),
+        CheckConstraint(
+            "(owner_type = 'agent' AND owner_agent_id IS NOT NULL AND "
+            "owner_agent_version_id IS NOT NULL) OR "
+            "(owner_type <> 'agent' AND owner_agent_id IS NULL AND "
+            "owner_agent_version_id IS NULL)",
+            name="ck_tasks_agent_owner",
+        ),
+        CheckConstraint(
+            "max_retries BETWEEN 0 AND 10 AND retry_count BETWEEN 0 AND max_retries",
+            name="ck_tasks_retries",
+        ),
+        Index("ix_tasks_business_status", "business_id", "status"),
+        Index("ix_tasks_business_priority_due", "business_id", "priority", "due_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    goal_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("business_goals.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[int] = mapped_column(SmallInteger, default=3)
+    owner_type: Mapped[str] = mapped_column(String(16), default="unassigned")
+    owner_agent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agents.id", ondelete="RESTRICT"), nullable=True
+    )
+    owner_agent_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_versions.id", ondelete="RESTRICT"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="draft")
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_retries: Mapped[int] = mapped_column(SmallInteger, default=0)
+    retry_count: Mapped[int] = mapped_column(SmallInteger, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TaskDependency(Base):
+    __tablename__ = "task_dependencies"
+    __table_args__ = (
+        CheckConstraint("task_id <> depends_on_task_id", name="ck_task_dependencies_not_self"),
+    )
+
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    depends_on_task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TaskEvent(Base):
+    __tablename__ = "task_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('created', 'dependency_added', 'status_changed', 'retried')",
+            name="ck_task_events_type",
+        ),
+        UniqueConstraint(
+            "task_id", "event_type", "idempotency_key", name="uq_task_events_idempotency"
+        ),
+        Index("ix_task_events_task_created", "task_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(32))
+    from_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    to_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    actor_owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("owners.id", ondelete="RESTRICT"))
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    details: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ModelGatewayCall(Base):
     __tablename__ = "model_gateway_calls"
     __table_args__ = (
