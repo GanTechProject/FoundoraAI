@@ -13,5 +13,6 @@
 | [ADR-0009](ADR-0009-founder-approved-onboarding-facts.md) | Resumable onboarding with an explicit founder-approved fact boundary | Accepted |
 | [ADR-0010](ADR-0010-governed-provider-independent-model-gateway.md) | Governed provider-independent model gateway | Accepted |
 | [ADR-0011](ADR-0011-provenance-first-derived-business-context.md) | Provenance-first derived business context | Accepted |
+| [ADR-0012](ADR-0012-versioned-durable-agent-runtime.md) | Immutable agent versions with durable worker-owned runs | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

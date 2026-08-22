@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from foundora import __version__
+from foundora.api.agents import router as agents_router
 from foundora.api.auth import router as auth_router
 from foundora.api.business_brain import router as business_brain_router
 from foundora.api.businesses import router as businesses_router
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
 
     application.include_router(health_router)
     application.include_router(auth_router)
+    application.include_router(agents_router)
     application.include_router(businesses_router)
     application.include_router(business_brain_router)
     application.include_router(onboarding_router)

@@ -242,7 +242,14 @@ class ModelGateway:
             or spent_cost + cost > request.cost_budget_microusd
         )
 
-    async def generate(self, business_id: uuid.UUID, request: GatewayRequest) -> GatewayResult:
+    async def generate(
+        self,
+        business_id: uuid.UUID,
+        request: GatewayRequest,
+        *,
+        operation_id: uuid.UUID | None = None,
+        agent_run_id: uuid.UUID | None = None,
+    ) -> GatewayResult:
         candidates = self._router.candidates(
             request.task_type,
             sensitivity=request.sensitivity,
@@ -251,7 +258,7 @@ class ModelGateway:
         configured = [candidate for candidate in candidates if candidate.provider.configured]
         if not configured:
             raise NoConfiguredProvider("No routed model provider is configured")
-        operation_id = uuid.uuid4()
+        operation_id = operation_id or uuid.uuid4()
         attempt_number = 0
         previous_provider: ProviderName | None = None
         last_error: ProviderFailure | None = None
@@ -315,6 +322,7 @@ class ModelGateway:
                         latency_ms=latency_ms,
                         error=None,
                         started_at=started_at,
+                        agent_run_id=agent_run_id,
                     )
                     return GatewayResult(
                         operation_id=operation_id,
@@ -365,6 +373,7 @@ class ModelGateway:
                         latency_ms=latency_ms,
                         error=failure,
                         started_at=started_at,
+                        agent_run_id=agent_run_id,
                     )
                     if response is not None:
                         spent_tokens += response.input_tokens + response.output_tokens
@@ -568,6 +577,7 @@ class ModelGateway:
         latency_ms: int,
         error: ProviderFailure | None,
         started_at: datetime,
+        agent_run_id: uuid.UUID | None = None,
     ) -> None:
         input_tokens = response.input_tokens if response is not None else 0
         output_tokens = response.output_tokens if response is not None else 0
@@ -577,6 +587,7 @@ class ModelGateway:
                     id=uuid.uuid4(),
                     operation_id=operation_id,
                     business_id=business_id,
+                    agent_run_id=agent_run_id,
                     request_id=correlation_id.get() or str(uuid.uuid4()),
                     task_type=request.task_type,
                     sensitivity=request.sensitivity,

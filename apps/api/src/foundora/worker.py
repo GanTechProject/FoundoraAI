@@ -16,7 +16,7 @@ def main() -> None:
     logger = logging.getLogger(__name__)
     connection = Redis.from_url(
         settings.redis_url,
-        decode_responses=True,
+        decode_responses=False,
         socket_connect_timeout=5,
         socket_timeout=5,
     )

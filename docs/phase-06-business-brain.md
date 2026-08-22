@@ -72,4 +72,6 @@ and an isolated end-to-end smoke suite. The Phase 06 checks prove that:
 - unavailable future sources are disclosed and the protected `/brain` view is
   backed by real API state.
 
-No Phase 07 agent registry or runtime behavior is implemented.
+Phase 07 now consumes this service only through an explicit, bounded,
+selected-business snapshot; the Phase 06 provenance and approval boundaries remain
+unchanged.

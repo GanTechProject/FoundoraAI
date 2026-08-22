@@ -35,5 +35,15 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 10. Context selection uses fixed source priority and a provider-independent upper
     bound of one token per UTF-8 byte. Completed goals are stale, cancelled goals
     are invalidated, and unimplemented source domains are reported unavailable.
+11. Phase 07 stores reusable agent identity separately from immutable versions and
+    pins every run to a version. The first agent is R0, manual-run-only, read-only,
+    and has empty tool and skill permissions.
+12. Agent runs snapshot approved selected-business context at enqueue time, execute
+    only in the existing worker through the governed model gateway, and persist
+    honest terminal output or failure plus directly linked usage attempts.
+13. Cancellation is cooperative at the durable boundary: queued work is skipped,
+    and a late provider result cannot overwrite a run already marked cancelled.
+    Tool waits, approval waits, and skills remain lifecycle-compatible but unused
+    until their authorized phases.
 
 Other questions can remain open until their named phase.

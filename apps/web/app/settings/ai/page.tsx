@@ -73,6 +73,9 @@ export default async function AiSettingsPage({
           <Link className="text-link" href="/brain">
             Business brain
           </Link>
+          <Link className="text-link" href="/agents">
+            Agents
+          </Link>
           <Link className="text-link" href="/settings/security">
             Security
           </Link>

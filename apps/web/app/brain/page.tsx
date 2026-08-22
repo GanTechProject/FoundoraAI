@@ -99,6 +99,9 @@ export default async function BusinessBrainPage({
           <Link className="text-link" href="/settings/ai">
             AI gateway
           </Link>
+          <Link className="text-link" href="/agents">
+            Agents
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out

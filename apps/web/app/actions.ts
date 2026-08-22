@@ -283,6 +283,51 @@ export async function runModelGatewayCheck(): Promise<never> {
   redirect("/settings/ai?updated=generated");
 }
 
+export async function runAgent(formData: FormData): Promise<never> {
+  const agentId = field(formData, "agent_id");
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest(
+      `/agents/${encodeURIComponent(agentId)}/runs`,
+      { objective: field(formData, "objective") },
+    );
+  } catch {
+    redirect("/agents?error=unavailable");
+  }
+  if (!response.ok) {
+    redirect(
+      `/agents?error=${response.status === 422 ? "invalid" : response.status === 404 ? "agent" : "unavailable"}`,
+    );
+  }
+  const value: unknown = await response.json();
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { id?: unknown }).id !== "string"
+  ) {
+    redirect("/agents?error=unavailable");
+  }
+  redirect(`/agents?run=${(value as { id: string }).id}&updated=queued`);
+}
+
+export async function cancelAgentRun(runId: string): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest(
+      `/agents/runs/${encodeURIComponent(runId)}/cancel`,
+      undefined,
+    );
+  } catch {
+    redirect(`/agents?run=${encodeURIComponent(runId)}&error=unavailable`);
+  }
+  if (!response.ok) {
+    redirect(
+      `/agents?run=${encodeURIComponent(runId)}&error=${response.status === 409 ? "terminal" : "unavailable"}`,
+    );
+  }
+  redirect(`/agents?run=${encodeURIComponent(runId)}&updated=cancelled`);
+}
+
 export async function logout(): Promise<never> {
   try {
     await authenticatedApiRequest("/auth/logout", undefined);

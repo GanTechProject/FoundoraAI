@@ -686,6 +686,125 @@ table code {
   overflow-wrap: anywhere;
 }
 
+.agent-registry {
+  display: grid;
+  gap: 18px;
+}
+
+.section-heading {
+  margin-bottom: 2px;
+}
+
+.agent-card,
+.agent-inspector {
+  display: grid;
+  gap: 20px;
+}
+
+.agent-card__heading,
+.run-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.agent-card__heading h2,
+.agent-card__heading h3 {
+  margin-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+
+.agent-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-contract-grid div {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid var(--line);
+}
+
+.agent-contract-grid span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.agent-contract-grid strong {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.agent-card details {
+  padding: 14px;
+  border: 1px solid var(--line);
+}
+
+.agent-card summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
+.agent-boundaries {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 18px;
+}
+
+.agent-boundaries ul {
+  border-top: 0;
+}
+
+.agent-boundaries li {
+  display: list-item;
+  margin-left: 18px;
+  padding: 5px 0;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  list-style: square;
+}
+
+.agent-run-form {
+  display: grid;
+}
+
+.run-actions {
+  justify-content: flex-start;
+}
+
+.run-actions .button-secondary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  text-decoration: none;
+}
+
+.status-pill--queued,
+.status-pill--running,
+.status-pill--waiting_tool,
+.status-pill--waiting_approval {
+  color: var(--accent);
+  border-color: rgba(217, 255, 99, 0.45);
+}
+
+.status-pill--completed {
+  color: var(--accent);
+}
+
+.status-pill--failed,
+.status-pill--cancelled {
+  color: var(--danger);
+  border-color: rgba(255, 111, 97, 0.45);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -812,8 +931,16 @@ li {
   }
 
   .brain-controls,
-  .source-checkboxes {
+  .source-checkboxes,
+  .agent-contract-grid,
+  .agent-boundaries {
     grid-template-columns: 1fr;
+  }
+
+  .agent-card__heading,
+  .run-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .wizard-progress li {
