@@ -94,6 +94,7 @@ class WorkflowStepRunView(BaseModel):
     attempt_count: int
     max_retries: int
     agent_run_id: UUID | None
+    governance_action_id: UUID | None
     input: dict[str, object] | None
     output: dict[str, object] | None
     error_type: str | None
@@ -209,6 +210,7 @@ def _run_view(record: WorkflowRunRecord) -> WorkflowRunView:
                 attempt_count=step.attempt_count,
                 max_retries=step.max_retries,
                 agent_run_id=step.agent_run_id,
+                governance_action_id=step.governance_action_id,
                 input=step.structured_input,
                 output=step.structured_output,
                 error_type=step.error_type,

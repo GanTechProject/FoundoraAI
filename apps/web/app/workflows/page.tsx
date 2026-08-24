@@ -72,6 +72,9 @@ export default async function WorkflowsPage({
           <Link className="text-link" href="/tasks">
             Task engine
           </Link>
+          <Link className="text-link" href="/governance">
+            Governance
+          </Link>
           <Link className="text-link" href="/agents">
             Agents &amp; skills
           </Link>

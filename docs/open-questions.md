@@ -10,7 +10,7 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 | Which object-storage provider should back production assets? | Phase 13/26 and Phase 59 | Use an abstraction; local development storage only when explicitly labeled |
 | Which preview/deployment and DNS providers are preferred? | Phase 24/25 | Local build/preview only; never claim deployment or DNS state |
 | Which email, social, advertising, analytics, CRM, and messaging providers are in scope? | Relevant provider phases | Planning/drafts only until adapter, credentials, permission, policy, and tests exist |
-| What monetary limits apply per action/day/provider? | Phase 11 and provider phases | Zero autonomous spend; explicit approval for R4 |
+| What provider-specific monetary limits apply? | Relevant provider phases | Phase 11 defaults to zero spend and exposes owner-set daily/per-action caps; R4 still requires explicit approval |
 | What retention, backup, privacy, and jurisdictional requirements apply to real business/customer data? | Before Phase 13 and Phase 33 | Minimize data, store provenance, exclude secrets, and avoid ingesting regulated data without a policy |
 | Which production domain and subdomain conventions should be used? | Phase 25/59 | None selected |
 
@@ -69,5 +69,14 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 21. Phase 10 permits only code-reviewed internal R0 tools and delegates agent steps
     through pinned agent runs. External tool adapters remain disabled until their
     governance and provider phases.
+22. Phase 11 uses an immutable provider-neutral default policy and derives risk
+    from a code-reviewed catalog. R2/R3/R4 require owner approval, R5 is denied,
+    and approval is rechecked against live controls before authorization.
+23. Business autonomy defaults to `OFF`; spend limits default to zero. The owner
+    may set daily and per-action micro-USD ceilings, while provider-specific
+    budgets remain decisions for their provider phases.
+24. The global kill switch is system-wide. Tool permissions, actions, approvals,
+    spend, and autonomy remain selected-business scoped. Phase 11 adds no
+    external provider tool or side effect.
 
 Other questions can remain open until their named phase.

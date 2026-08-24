@@ -99,6 +99,7 @@ def records() -> tuple[AuthContext, WorkflowRunRecord]:
         attempt_count=0,
         max_retries=1,
         agent_run_id=None,
+        governance_action_id=None,
         structured_input=None,
         structured_output=None,
         error_type=None,

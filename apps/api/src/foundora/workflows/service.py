@@ -17,9 +17,11 @@ from foundora.agents.schema import validate_schema
 from foundora.auth.service import AuthContext
 from foundora.business.context import resolve_selected_business
 from foundora.config import get_settings
+from foundora.governance.service import GovernanceService
 from foundora.infrastructure.database import get_session_factory
 from foundora.models import (
     AgentRun,
+    ApprovalRequest,
     Task,
     Workflow,
     WorkflowEvent,
@@ -244,6 +246,7 @@ class WorkflowService:
                             attempt_count=0,
                             max_retries=definition.max_retries,
                             agent_run_id=None,
+                            governance_action_id=None,
                             structured_input=None,
                             structured_output=None,
                             error_type=None,
@@ -328,9 +331,37 @@ class WorkflowService:
                         raise WorkflowResumeNotAllowed(
                             "Approval checkpoints require approved or rejected"
                         )
+                    if step.governance_action_id is None:
+                        raise WorkflowResumeNotAllowed(
+                            "Approval checkpoint has no governance authorization"
+                        )
+                    approval = await database.scalar(
+                        select(ApprovalRequest).where(
+                            ApprovalRequest.action_id == step.governance_action_id,
+                            ApprovalRequest.business_id == business.id,
+                        )
+                    )
+                    if approval is None:
+                        raise WorkflowResumeNotAllowed(
+                            "Approval checkpoint has no durable approval request"
+                        )
+                    await GovernanceService().decide_in_session(
+                        database,
+                        business_id=business.id,
+                        approval_id=approval.id,
+                        decision=decision,  # type: ignore[arg-type]
+                        reason=(
+                            "Workflow checkpoint approved"
+                            if decision == "approved"
+                            else "Workflow checkpoint rejected"
+                        ),
+                        idempotency_key=f"{idempotency_key}:decision",
+                        owner_id=context.owner.id,
+                    )
                     step.structured_output = {
                         "decision": decision,
                         "input": dict(structured_input),
+                        "governance_action_id": str(step.governance_action_id),
                     }
                     step.completed_at = _now()
                     if decision == "rejected":
@@ -347,6 +378,15 @@ class WorkflowService:
                             step_key=step.step_key,
                         )
                     else:
+                        authorization = await GovernanceService().authorize_in_session(
+                            database,
+                            business_id=business.id,
+                            action_id=step.governance_action_id,
+                            idempotency_key=f"{idempotency_key}:authorize",
+                            owner_id=context.owner.id,
+                        )
+                        if authorization.action.status != "authorized":
+                            raise WorkflowResumeNotAllowed(authorization.action.rationale)
                         step.status = "completed"
                         run.status = "queued"
                         run.queued_at = _now()

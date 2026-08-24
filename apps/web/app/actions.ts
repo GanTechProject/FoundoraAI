@@ -524,6 +524,138 @@ export async function cancelWorkflow(runId: string): Promise<never> {
   redirect(`/workflows?run=${encodeURIComponent(runId)}&updated=cancelled`);
 }
 
+function governanceError(response: Response): string {
+  if (response.status === 403) return "denied";
+  if (response.status === 404) return "not-found";
+  if (response.status === 409) return "conflict";
+  if (response.status === 422) return "invalid";
+  return "unavailable";
+}
+
+async function governanceMutation(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  try {
+    return await authenticatedApiRequest(path, body);
+  } catch {
+    redirect("/governance?error=unavailable");
+  }
+}
+
+export async function updateGovernanceSettings(
+  formData: FormData,
+): Promise<never> {
+  const response = await governanceMutation("/governance/settings", {
+    autonomy_level: field(formData, "autonomy_level"),
+    daily_spend_limit_microusd: Number(
+      field(formData, "daily_spend_limit_microusd"),
+    ),
+    per_action_spend_limit_microusd: Number(
+      field(formData, "per_action_spend_limit_microusd"),
+    ),
+    revision: Number(field(formData, "revision")),
+  });
+  if (!response.ok) {
+    redirect(`/governance?error=${governanceError(response)}`);
+  }
+  redirect("/governance?updated=settings");
+}
+
+export async function updateGovernanceKillSwitch(
+  enabled: boolean,
+  formData: FormData,
+): Promise<never> {
+  const response = await governanceMutation("/governance/kill-switch", {
+    enabled,
+    reason: field(formData, "reason") || null,
+    revision: Number(field(formData, "revision")),
+  });
+  if (!response.ok) {
+    redirect(`/governance?error=${governanceError(response)}`);
+  }
+  redirect(`/governance?updated=${enabled ? "killed" : "released"}`);
+}
+
+export async function updateGovernanceToolPermission(
+  toolId: string,
+  enabled: boolean,
+  revision: number,
+): Promise<never> {
+  const response = await governanceMutation(
+    `/governance/tools/${encodeURIComponent(toolId)}/permission`,
+    { enabled, revision },
+  );
+  if (!response.ok) {
+    redirect(`/governance?error=${governanceError(response)}`);
+  }
+  redirect("/governance?updated=tool");
+}
+
+export async function evaluateGovernanceAction(
+  formData: FormData,
+): Promise<never> {
+  const actionType = field(formData, "action_type");
+  const response = await governanceMutation("/governance/actions/evaluate", {
+    action_type: actionType,
+    tool_id: field(formData, "tool_id") || null,
+    execution_mode: field(formData, "execution_mode"),
+    data_classification: field(formData, "data_classification"),
+    requested_spend_microusd: Number(
+      field(formData, "requested_spend_microusd"),
+    ),
+    frequency_key: field(formData, "frequency_key") || null,
+    target: field(formData, "target") || null,
+    idempotency_key: `ui:governance:${crypto.randomUUID()}`,
+  });
+  if (!response.ok) {
+    redirect(`/governance?error=${governanceError(response)}`);
+  }
+  const value: unknown = await response.json();
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { id?: unknown }).id !== "string"
+  ) {
+    redirect("/governance?error=unavailable");
+  }
+  redirect(
+    `/governance?action=${(value as { id: string }).id}&updated=evaluated`,
+  );
+}
+
+export async function decideGovernanceApproval(
+  approvalId: string,
+  decision: "approved" | "rejected",
+  formData: FormData,
+): Promise<never> {
+  const response = await governanceMutation(
+    `/governance/approvals/${encodeURIComponent(approvalId)}/decide`,
+    {
+      decision,
+      reason: field(formData, "reason") || null,
+      idempotency_key: `ui:approval:${approvalId}:${crypto.randomUUID()}`,
+    },
+  );
+  if (!response.ok) {
+    redirect(`/governance?error=${governanceError(response)}`);
+  }
+  redirect(`/governance?updated=${decision}`);
+}
+
+export async function authorizeGovernanceAction(
+  actionId: string,
+): Promise<never> {
+  const response = await governanceMutation(
+    `/governance/actions/${encodeURIComponent(actionId)}/authorize`,
+    { idempotency_key: `ui:authorize:${actionId}:${crypto.randomUUID()}` },
+  );
+  if (!response.ok) {
+    redirect(`/governance?error=${governanceError(response)}`);
+  }
+  redirect("/governance?updated=authorized");
+}
+
 export async function logout(): Promise<never> {
   try {
     await authenticatedApiRequest("/auth/logout", undefined);

@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task engine, and the Phase 10 workflow engine.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, and the Phase 11 policy, risk, and approval engine.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -110,10 +110,17 @@ records queued work but does not itself execute a workflow or grant an approval.
 Open `/workflows` to inspect immutable workflow graphs and their selected-business
 run ledger. A run pins an exact definition version, persists all step state before
 queue delivery, enforces dependency and conditional-branch ordering, and resumes
-through idempotent owner, wait, or child-agent checkpoints. Phase 10 permits only
-internal R0 tools; its approval step is a manual checkpoint rather than a policy
-grant. External tool authority, risk policy, spend limits, and the kill switch
-remain Phase 11. The schema head is `20260824_10`.
+through idempotent owner, wait, or child-agent checkpoints. Every internal tool,
+compensation, and owner checkpoint now crosses the Phase 11 governance boundary
+before execution. External provider tools remain unavailable.
+
+Open `/governance` to inspect the immutable active policy, code-derived R0–R5
+risk catalog, selected-business autonomy and spend ceilings, internal tool
+permissions, durable action/approval ledger, and append-only audit evidence. R3
+and R4 always require explicit owner approval, R5 is denied, spend defaults to
+zero, and authorization rechecks live controls. The global kill switch is
+enforced beneath workflow prompts. Authorization never claims an external side
+effect occurred. The schema head is `20260824_11`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -133,7 +140,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, and workflow checkpoint/resume smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 and 10 themselves make no provider call. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, and governance bypass/kill-switch smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 11 themselves make no provider call. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external
@@ -150,4 +157,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business workspaces, onboarding drafts, founder-approved profiles, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, and model usage are durable PostgreSQL records. Business-brain context remains derived from authoritative selected-business records. Policy, external tool, and later operational domains remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue. Business workspaces, onboarding drafts, founder-approved profiles, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, policy versions, governance controls, action approvals, audit evidence, and model usage are durable PostgreSQL records. Business-brain context remains derived from authoritative selected-business records. External provider tools and later operational domains remain deferred to their authorized phases.

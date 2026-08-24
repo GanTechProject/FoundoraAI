@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.service import enqueue_agent_run
+from foundora.governance.service import GovernanceService
 from foundora.infrastructure.database import get_session_factory
 from foundora.models import (
     Agent,
@@ -86,6 +87,25 @@ async def compensate_completed_steps(
         if step.status != "completed" or compensation is None:
             continue
         try:
+            authorization = await GovernanceService().evaluate_in_session(
+                database,
+                business_id=run.business_id,
+                action_type="internal.analysis",
+                actor_type="workflow",
+                actor_id=str(run.workflow_version_id),
+                tool_id=str(compensation),
+                execution_mode="manual",
+                data_classification="internal",
+                requested_spend_microusd=0,
+                frequency_key=None,
+                target=step.step_key,
+                idempotency_key=f"workflow:{run.id}:compensate:{step.step_key}",
+                created_by_owner_id=run.created_by_owner_id,
+                workflow_run_id=run.id,
+                workflow_step_key=step.step_key,
+            )
+            if authorization.action.status != "authorized":
+                raise RuntimeError(authorization.action.rationale)
             output = execute_internal_tool(compensation, step.structured_output or {})
         except Exception as error:
             await add_event(
@@ -273,6 +293,42 @@ class WorkflowRuntime:
                     continue
                 run.current_step_key = step.step_key
                 if definition.step_type == "approval":
+                    authorization = await GovernanceService().evaluate_in_session(
+                        database,
+                        business_id=run.business_id,
+                        action_type="workflow.checkpoint",
+                        actor_type="workflow",
+                        actor_id=str(run.workflow_version_id),
+                        tool_id=None,
+                        execution_mode="manual",
+                        data_classification="internal",
+                        requested_spend_microusd=0,
+                        frequency_key=None,
+                        target=step.step_key,
+                        idempotency_key=f"workflow:{run.id}:approval:{step.step_key}",
+                        created_by_owner_id=run.created_by_owner_id,
+                        workflow_run_id=run.id,
+                        workflow_step_key=step.step_key,
+                        force_approval=True,
+                        approval_prompt=str(definition.config.get("prompt", ""))[:500],
+                    )
+                    step.governance_action_id = authorization.action.id
+                    if authorization.action.status != "approval_required":
+                        step.status = "failed"
+                        step.error_type = "governance_denied"
+                        step.error_message = authorization.action.rationale
+                        step.completed_at = _now()
+                        await fail_workflow(
+                            database,
+                            run,
+                            definitions,
+                            step_runs,
+                            step.error_type,
+                            step.error_message,
+                            step_key=step.step_key,
+                        )
+                        await database.commit()
+                        return
                     step.status = "waiting_approval"
                     step.started_at = _now()
                     run.status = "waiting_approval"
@@ -318,6 +374,42 @@ class WorkflowRuntime:
         definitions: dict[str, StepDefinition],
         step_runs: list[WorkflowStepRun],
     ) -> None:
+        authorization = await GovernanceService().evaluate_in_session(
+            database,
+            business_id=run.business_id,
+            action_type="internal.analysis",
+            actor_type="workflow",
+            actor_id=str(run.workflow_version_id),
+            tool_id=str(definition.config.get("tool")),
+            execution_mode="manual",
+            data_classification="internal",
+            requested_spend_microusd=0,
+            frequency_key=None,
+            target=step.step_key,
+            idempotency_key=(
+                f"workflow:{run.id}:tool:{step.step_key}:attempt:{step.attempt_count + 1}"
+            ),
+            created_by_owner_id=run.created_by_owner_id,
+            workflow_run_id=run.id,
+            workflow_step_key=step.step_key,
+        )
+        step.governance_action_id = authorization.action.id
+        if authorization.action.status != "authorized":
+            step.status = "failed"
+            step.error_type = "governance_denied"
+            step.error_message = authorization.action.rationale
+            step.completed_at = _now()
+            await fail_workflow(
+                database,
+                run,
+                definitions,
+                step_runs,
+                step.error_type,
+                step.error_message,
+                step_key=step.step_key,
+            )
+            await database.commit()
+            return
         step.status = "running"
         step.attempt_count += 1
         step.started_at = step.started_at or _now()

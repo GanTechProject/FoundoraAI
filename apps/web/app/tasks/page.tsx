@@ -88,6 +88,9 @@ export default async function TasksPage({
           <Link className="text-link" href="/workflows">
             Workflows
           </Link>
+          <Link className="text-link" href="/governance">
+            Governance
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out

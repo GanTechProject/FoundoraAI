@@ -563,6 +563,9 @@ class WorkflowStepRun(Base):
     agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    governance_action_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("governance_actions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     structured_input: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     structured_output: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -589,6 +592,216 @@ class WorkflowEvent(Base):
     sequence: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(40))
     step_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    actor_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    details: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Policy(Base):
+    __tablename__ = "policies"
+    __table_args__ = (CheckConstraint("current_version > 0", name="ck_policies_current_version"),)
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160))
+    enabled: Mapped[bool] = mapped_column(default=True)
+    current_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PolicyVersion(Base):
+    __tablename__ = "policy_versions"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_policy_versions_version"),
+        UniqueConstraint("policy_id", "version", name="uq_policy_versions_policy_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    policy_id: Mapped[str] = mapped_column(
+        ForeignKey("policies.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(Text)
+    rules: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GlobalGovernanceControl(Base):
+    __tablename__ = "global_governance_controls"
+    __table_args__ = (
+        CheckConstraint("singleton_key = 1", name="ck_global_governance_singleton"),
+        CheckConstraint("revision > 0", name="ck_global_governance_revision"),
+    )
+
+    singleton_key: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    kill_switch_enabled: Mapped[bool] = mapped_column(default=False)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GovernanceSetting(Base):
+    __tablename__ = "governance_settings"
+    __table_args__ = (
+        CheckConstraint(
+            "autonomy_level IN ('OFF', 'RECOMMEND', 'ASSISTED', 'AUTONOMOUS_LOW_RISK')",
+            name="ck_governance_settings_autonomy",
+        ),
+        CheckConstraint(
+            "daily_spend_limit_microusd >= 0 AND per_action_spend_limit_microusd >= 0",
+            name="ck_governance_settings_spend_limits",
+        ),
+        CheckConstraint("revision > 0", name="ck_governance_settings_revision"),
+    )
+
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), primary_key=True
+    )
+    autonomy_level: Mapped[str] = mapped_column(String(32), default="OFF")
+    daily_spend_limit_microusd: Mapped[int] = mapped_column(BigInteger, default=0)
+    per_action_spend_limit_microusd: Mapped[int] = mapped_column(BigInteger, default=0)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GovernanceToolPermission(Base):
+    __tablename__ = "governance_tool_permissions"
+    __table_args__ = (CheckConstraint("revision > 0", name="ck_tool_permissions_revision"),)
+
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), primary_key=True
+    )
+    tool_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GovernanceAction(Base):
+    __tablename__ = "governance_actions"
+    __table_args__ = (
+        CheckConstraint(
+            "actor_type IN ('owner', 'agent', 'workflow', 'system')",
+            name="ck_governance_actions_actor_type",
+        ),
+        CheckConstraint(
+            "risk_class IN ('R0', 'R1', 'R2', 'R3', 'R4', 'R5')",
+            name="ck_governance_actions_risk_class",
+        ),
+        CheckConstraint(
+            "execution_mode IN ('manual', 'autonomous')",
+            name="ck_governance_actions_execution_mode",
+        ),
+        CheckConstraint(
+            "data_classification IN ('public', 'internal', 'confidential', 'restricted')",
+            name="ck_governance_actions_data_classification",
+        ),
+        CheckConstraint(
+            "status IN ('approval_required', 'approved', 'rejected', 'authorized', "
+            "'denied', 'blocked')",
+            name="ck_governance_actions_status",
+        ),
+        CheckConstraint("requested_spend_microusd >= 0", name="ck_governance_actions_spend"),
+        UniqueConstraint(
+            "business_id", "idempotency_key", name="uq_governance_actions_idempotency"
+        ),
+        Index("ix_governance_actions_business_created", "business_id", "created_at"),
+        Index("ix_governance_actions_business_status", "business_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    policy_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("policy_versions.id", ondelete="RESTRICT"), index=True
+    )
+    workflow_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    workflow_step_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    action_type: Mapped[str] = mapped_column(String(120))
+    actor_type: Mapped[str] = mapped_column(String(16))
+    actor_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    tool_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    risk_class: Mapped[str] = mapped_column(String(2))
+    execution_mode: Mapped[str] = mapped_column(String(16))
+    data_classification: Mapped[str] = mapped_column(String(16))
+    requested_spend_microusd: Mapped[int] = mapped_column(BigInteger, default=0)
+    frequency_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    target: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    status: Mapped[str] = mapped_column(String(24))
+    rationale: Mapped[str] = mapped_column(String(500))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    created_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ApprovalRequest(Base):
+    __tablename__ = "approval_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'cancelled')",
+            name="ck_approval_requests_status",
+        ),
+        UniqueConstraint("action_id", name="uq_approval_requests_action"),
+        Index("ix_approval_requests_business_status", "business_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    action_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("governance_actions.id", ondelete="CASCADE"), index=True
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    prompt: Mapped[str] = mapped_column(String(500))
+    decision_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    requested_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    decided_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GovernanceAuditEvent(Base):
+    __tablename__ = "governance_audit_events"
+    __table_args__ = (
+        Index("ix_governance_audit_business_created", "business_id", "created_at"),
+        Index("ix_governance_audit_action_created", "action_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    action_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("governance_actions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    approval_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("approval_requests.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(64))
     actor_owner_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
     )

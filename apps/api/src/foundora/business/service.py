@@ -11,7 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from foundora.auth.service import AuthContext
 from foundora.business.context import NoSelectedBusiness, resolve_selected_business
 from foundora.infrastructure.database import get_session_factory
-from foundora.models import Business, BusinessGoal, BusinessPreference, OwnerSession
+from foundora.models import (
+    Business,
+    BusinessGoal,
+    BusinessPreference,
+    GovernanceSetting,
+    GovernanceToolPermission,
+    OwnerSession,
+)
 
 
 class BusinessNameConflict(Exception):
@@ -71,6 +78,30 @@ class BusinessService:
             locale="en",
             updated_at=now,
         )
+        governance = GovernanceSetting(
+            business_id=business.id,
+            autonomy_level="OFF",
+            daily_spend_limit_microusd=0,
+            per_action_spend_limit_microusd=0,
+            revision=1,
+            updated_by_owner_id=context.owner.id,
+            updated_at=now,
+        )
+        tool_permissions = [
+            GovernanceToolPermission(
+                business_id=business.id,
+                tool_id=tool_id,
+                enabled=True,
+                revision=1,
+                updated_by_owner_id=context.owner.id,
+                updated_at=now,
+            )
+            for tool_id in (
+                "foundora.internal.discard",
+                "foundora.internal.echo",
+                "foundora.internal.fail",
+            )
+        ]
         try:
             async with self._session_factory() as database:
                 async with database.begin():
@@ -84,7 +115,7 @@ class BusinessService:
                     )
                     if session is None:
                         raise BusinessNotFound
-                    database.add_all((business, preference))
+                    database.add_all((business, preference, governance, *tool_permissions))
                     await database.flush()
                     if session.selected_business_id is None:
                         session.selected_business_id = business.id

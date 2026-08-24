@@ -61,6 +61,7 @@ export interface WorkflowRun {
     attempt_count: number;
     max_retries: number;
     agent_run_id: string | null;
+    governance_action_id: string | null;
     input: Record<string, unknown> | null;
     output: Record<string, unknown> | null;
     error_type: string | null;

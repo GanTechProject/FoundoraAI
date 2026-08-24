@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 10 is a portable modular monorepo:
+The implementation through Phase 11 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -23,6 +23,10 @@ The implementation through Phase 10 is a portable modular monorepo:
 - a version-pinned workflow coordinator with validated dependency graphs,
   conditional branches, internal R0 and pinned-agent steps, durable owner/wait
   checkpoints, bounded retries, compensation evidence, and worker recovery;
+- an execution-time governance engine with immutable policy versions,
+  code-derived R0–R5 classification, selected-business autonomy/spend/tool
+  controls, durable approvals, a global kill switch, and append-only audit
+  evidence beneath workflow execution;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -59,7 +63,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 10
+## Implemented foundation through Phase 11
 
 The verified baseline is:
 
@@ -121,6 +125,10 @@ The verified baseline is:
   step ledgers, conditional branches, internal R0 tools, pinned child-agent runs,
   manual approval/wait checkpoints, idempotent resume, bounded retries, reverse
   compensation, deterministic failures, and queue/interruption reconciliation;
+- an immutable provider-neutral governance policy, code-reviewed action and tool
+  catalogs, selected-business autonomy/spend/permission controls, separate
+  approval and authorization transitions, execution-time rechecks, a global kill
+  switch, and durable audit evidence linked to workflow checkpoints and tools;
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 

@@ -206,6 +206,9 @@ try {
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/workflows"
     }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/governance"
+    }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
         ConvertTo-Json -Compress
@@ -413,7 +416,7 @@ try {
             -ContentType "application/json" -WebSession $ownerSession `
             -Body ($transitionBody | ConvertTo-Json -Compress)
     }
-    $taskRetryKey = "smoke:$runId:dependent-retry"
+    $taskRetryKey = "smoke:${runId}:dependent-retry"
     $taskRetryBody = @{ idempotency_key = $taskRetryKey } | ConvertTo-Json -Compress
     $retriedTask = Invoke-RestMethod -Uri "$smokeApiOrigin/tasks/$dependentTaskId/retry" `
         -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
@@ -443,7 +446,7 @@ try {
             @($workflowRun.steps | Where-Object { $_.status -eq "completed" }).Count -ne 2) {
         throw "Workflow did not execute its dependency and conditional branch before approval"
     }
-    $approvalResumeKey = "smoke:$runId:workflow-approval"
+    $approvalResumeKey = "smoke:${runId}:workflow-approval"
     $approvalResumeBody = @{
         idempotency_key = $approvalResumeKey
         decision = "approved"
@@ -462,7 +465,7 @@ try {
     if ($workflowRun.current_step_key -ne "durable_wait") {
         throw "Workflow did not resume from approval into its durable wait"
     }
-    $waitResumeKey = "smoke:$runId:workflow-wait"
+    $waitResumeKey = "smoke:${runId}:workflow-wait"
     $waitResumeBody = @{
         idempotency_key = $waitResumeKey
         decision = $null
@@ -496,7 +499,7 @@ try {
         throw "Workflow false conditional branch was not skipped deterministically"
     }
     $rejectionBody = @{
-        idempotency_key = "smoke:$runId:workflow-rejection"
+        idempotency_key = "smoke:${runId}:workflow-rejection"
         decision = "rejected"
         input = @{}
     } | ConvertTo-Json -Depth 3 -Compress
@@ -513,6 +516,260 @@ try {
                 $_.event_type -eq "step_compensated"
             }).Count -ne 1) {
         throw "Workflow rejection failure or reverse compensation was not deterministic"
+    }
+
+    $governanceDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/governance" `
+        -WebSession $ownerSession
+    if ($governanceDashboard.policy.policy_id -ne "foundora-default-governance" -or `
+            $governanceDashboard.policy.version -ne 1 -or `
+            $governanceDashboard.settings.autonomy_level -ne "OFF" -or `
+            $governanceDashboard.settings.daily_spend_limit_microusd -ne 0 -or `
+            $governanceDashboard.controls.kill_switch_enabled -or `
+            $governanceDashboard.tool_permissions.Count -ne 3) {
+        throw "Default Phase 11 policy and least-authority controls are incorrect"
+    }
+
+    $rejectedR3 = Invoke-RestMethod -Uri "$smokeApiOrigin/governance/actions/evaluate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            action_type = "external.publication"
+            execution_mode = "manual"
+            data_classification = "internal"
+            requested_spend_microusd = 0
+            frequency_key = "smoke-publication"
+            target = "provider-neutral-publication-target"
+            idempotency_key = "smoke:${runId}:r3-rejected"
+        } | ConvertTo-Json -Compress)
+    if ($rejectedR3.risk_class -ne "R3" -or `
+            $rejectedR3.status -ne "approval_required" -or `
+            $rejectedR3.approval.status -ne "pending") {
+        throw "R3 action did not require a durable owner approval"
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/governance/actions/$($rejectedR3.id)/authorize" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                idempotency_key = "smoke:${runId}:r3-bypass"
+            } | ConvertTo-Json -Compress)
+    }
+    $rejectedR3 = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/approvals/$($rejectedR3.approval.id)/decide" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            decision = "rejected"
+            reason = "Phase 11 deterministic rejection"
+            idempotency_key = "smoke:${runId}:r3-reject-decision"
+        } | ConvertTo-Json -Compress)
+    if ($rejectedR3.status -ne "rejected" -or $rejectedR3.approval.status -ne "rejected") {
+        throw "Rejected R3 approval did not become terminal"
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/governance/actions/$($rejectedR3.id)/authorize" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                idempotency_key = "smoke:${runId}:r3-after-rejection"
+            } | ConvertTo-Json -Compress)
+    }
+
+    $zeroBudgetR4 = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/actions/evaluate" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            action_type = "financial.spend"
+            execution_mode = "manual"
+            data_classification = "internal"
+            requested_spend_microusd = 1
+            target = "provider-neutral-budget-target"
+            idempotency_key = "smoke:${runId}:r4-zero-budget"
+        } | ConvertTo-Json -Compress)
+    if ($zeroBudgetR4.risk_class -ne "R4" -or $zeroBudgetR4.status -ne "denied") {
+        throw "Zero-by-default spend policy did not deny R4 spend"
+    }
+
+    $governanceSettings = Invoke-RestMethod -Uri "$smokeApiOrigin/governance/settings" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            autonomy_level = "AUTONOMOUS_LOW_RISK"
+            daily_spend_limit_microusd = 10000
+            per_action_spend_limit_microusd = 5000
+            revision = $governanceDashboard.settings.revision
+        } | ConvertTo-Json -Compress)
+    if ($governanceSettings.autonomy_level -ne "AUTONOMOUS_LOW_RISK" -or `
+            $governanceSettings.revision -ne 2) {
+        throw "Selected-business autonomy and spend controls did not persist"
+    }
+
+    $approvedR4 = Invoke-RestMethod -Uri "$smokeApiOrigin/governance/actions/evaluate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            action_type = "financial.spend"
+            execution_mode = "manual"
+            data_classification = "internal"
+            requested_spend_microusd = 1000
+            target = "provider-neutral-approved-budget"
+            idempotency_key = "smoke:${runId}:r4-approved"
+        } | ConvertTo-Json -Compress)
+    if ($approvedR4.risk_class -ne "R4" -or $approvedR4.status -ne "approval_required") {
+        throw "Within-limit R4 spend bypassed explicit approval"
+    }
+    $approvedR4 = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/approvals/$($approvedR4.approval.id)/decide" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            decision = "approved"
+            reason = "Phase 11 explicit R4 approval"
+            idempotency_key = "smoke:${runId}:r4-approve-decision"
+        } | ConvertTo-Json -Compress)
+    $approvedR4 = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/actions/$($approvedR4.id)/authorize" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            idempotency_key = "smoke:${runId}:r4-authorize"
+        } | ConvertTo-Json -Compress)
+    if ($approvedR4.status -ne "authorized" -or `
+            $approvedR4.requested_spend_microusd -ne 1000) {
+        throw "Approved R4 action did not pass the execution-time spend recheck"
+    }
+
+    $approvedR3 = Invoke-RestMethod -Uri "$smokeApiOrigin/governance/actions/evaluate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            action_type = "external.communication"
+            execution_mode = "manual"
+            data_classification = "confidential"
+            requested_spend_microusd = 0
+            target = "provider-neutral-recipient"
+            idempotency_key = "smoke:${runId}:r3-approved"
+        } | ConvertTo-Json -Compress)
+    $approvedR3 = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/approvals/$($approvedR3.approval.id)/decide" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            decision = "approved"
+            reason = "Phase 11 explicit R3 approval"
+            idempotency_key = "smoke:${runId}:r3-approve-decision"
+        } | ConvertTo-Json -Compress)
+    $approvedR3 = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/actions/$($approvedR3.id)/authorize" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            idempotency_key = "smoke:${runId}:r3-authorize"
+        } | ConvertTo-Json -Compress)
+    if ($approvedR3.status -ne "authorized") {
+        throw "Approved R3 action did not pass execution-time policy recheck"
+    }
+
+    $autonomousR0 = Invoke-RestMethod -Uri "$smokeApiOrigin/governance/actions/evaluate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            action_type = "internal.analysis"
+            execution_mode = "autonomous"
+            data_classification = "internal"
+            requested_spend_microusd = 0
+            idempotency_key = "smoke:${runId}:autonomous-r0"
+        } | ConvertTo-Json -Compress)
+    if ($autonomousR0.status -ne "authorized" -or $autonomousR0.risk_class -ne "R0") {
+        throw "AUTONOMOUS_LOW_RISK did not permit the low-risk smoke authorization"
+    }
+
+    $echoPermission = $governanceDashboard.tool_permissions | `
+        Where-Object { $_.tool_id -eq "foundora.internal.echo" } | Select-Object -First 1
+    $echoPermission = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/tools/foundora.internal.echo/permission" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            enabled = $false
+            revision = $echoPermission.revision
+        } | ConvertTo-Json -Compress)
+    $disabledToolWorkflow = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/workflows/durable-checkpoint-workflow/runs" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            input = @{ message = "Phase 11 disabled tool"; include_branch = $false }
+            task_id = $null
+        } | ConvertTo-Json -Depth 4 -Compress)
+    $disabledToolWorkflowId = [string]$disabledToolWorkflow.id
+    $disabledToolWorkflow = Wait-ForWorkflowState `
+        -Uri "$smokeApiOrigin/workflows/runs/$disabledToolWorkflowId" `
+        -WebSession $ownerSession -ExpectedStates @("failed")
+    if ($disabledToolWorkflow.error_type -ne "governance_denied") {
+        throw "Disabled tool permission did not block workflow execution"
+    }
+    $echoPermission = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/governance/tools/foundora.internal.echo/permission" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            enabled = $true
+            revision = $echoPermission.revision
+        } | ConvertTo-Json -Compress)
+
+    $killSwitch = Invoke-RestMethod -Uri "$smokeApiOrigin/governance/kill-switch" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            enabled = $true
+            reason = "Phase 11 workflow enforcement smoke"
+            revision = $governanceDashboard.controls.revision
+        } | ConvertTo-Json -Compress)
+    $killedWorkflow = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/workflows/durable-checkpoint-workflow/runs" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            input = @{ message = "Phase 11 kill switch"; include_branch = $false }
+            task_id = $null
+        } | ConvertTo-Json -Depth 4 -Compress)
+    $killedWorkflowId = [string]$killedWorkflow.id
+    $killedWorkflow = Wait-ForWorkflowState `
+        -Uri "$smokeApiOrigin/workflows/runs/$killedWorkflowId" `
+        -WebSession $ownerSession -ExpectedStates @("failed")
+    if ($killedWorkflow.error_type -ne "governance_denied") {
+        throw "Global kill switch did not block workflow execution beneath prompts"
+    }
+    $killSwitch = Invoke-RestMethod -Uri "$smokeApiOrigin/governance/kill-switch" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            enabled = $false
+            reason = $null
+            revision = $killSwitch.revision
+        } | ConvertTo-Json -Compress)
+    if ($killSwitch.kill_switch_enabled) {
+        throw "Global kill switch did not release after the enforcement smoke"
     }
 
     Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
@@ -532,6 +789,13 @@ try {
             -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
             -ContentType "application/json" -WebSession $ownerSession `
             -Body (@{ status = "completed" } | ConvertTo-Json -Compress)
+    }
+    $alphaGovernance = Invoke-RestMethod -Uri "$smokeApiOrigin/governance" `
+        -WebSession $ownerSession
+    if ($alphaGovernance.business_id -ne $businessAId -or `
+            $alphaGovernance.actions.Count -ne 0 -or `
+            $alphaGovernance.settings.autonomy_level -ne "OFF") {
+        throw "Governance actions or selected-business controls crossed a business boundary"
     }
     Assert-HttpStatus -ExpectedStatus 404 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/tasks/$dependentTaskId" `
@@ -1216,6 +1480,14 @@ try {
             -not $webWorkflowsPage.Content.Contains("Start pinned workflow")) {
         throw "Protected workflow registry and execution controls did not render"
     }
+    $webGovernancePage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/governance" -WebSession $ownerWebSession
+    if (-not $webGovernancePage.Content.Contains("Policy, risk, approvals, and hard stops") -or `
+            -not $webGovernancePage.Content.Contains("Global kill switch") -or `
+            -not $webGovernancePage.Content.Contains("Propose an authorization") -or `
+            -not $webGovernancePage.Content.Contains("Governance audit trail")) {
+        throw "Protected governance controls and audit ledger did not render"
+    }
 
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
@@ -1271,8 +1543,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260824_10") {
-        throw "Isolated workflow migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260824_11") {
+        throw "Isolated governance migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -1306,6 +1578,18 @@ try {
         "SELECT (SELECT count(*) FROM workflow_runs WHERE id = '$rejectedWorkflowId' AND status = 'failed' AND error_type = 'checkpoint_rejected') || '|' || (SELECT count(*) FROM workflow_step_runs WHERE workflow_run_id = '$rejectedWorkflowId' AND status = 'compensated') || '|' || (SELECT count(*) FROM workflow_events WHERE workflow_run_id = '$rejectedWorkflowId' AND event_type = 'step_compensated')"
     if ($LASTEXITCODE -ne 0 -or $workflowFailureEvidence.Trim() -ne "1|1|1") {
         throw "Deterministic workflow failure or compensation evidence is incorrect"
+    }
+    $governanceEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM governance_actions WHERE business_id = '$businessBId' AND risk_class IN ('R3', 'R4') AND status = 'authorized') || '|' || (SELECT count(*) FROM governance_actions WHERE business_id = '$businessBId' AND status = 'rejected') || '|' || (SELECT count(*) FROM governance_audit_events WHERE business_id = '$businessBId' AND event_type = 'execution_denied') || '|' || (SELECT count(*) FROM governance_audit_events WHERE business_id IS NULL AND event_type IN ('kill_switch_engaged', 'kill_switch_released')) || '|' || (SELECT count(*) FROM workflow_runs WHERE id IN ('$disabledToolWorkflowId', '$killedWorkflowId') AND status = 'failed' AND error_type = 'governance_denied')"
+    $governanceEvidenceParts = $governanceEvidence.Trim().Split("|")
+    if ($LASTEXITCODE -ne 0 -or $governanceEvidenceParts.Count -ne 5 -or `
+            [int]$governanceEvidenceParts[0] -ne 2 -or `
+            [int]$governanceEvidenceParts[1] -lt 2 -or `
+            [int]$governanceEvidenceParts[2] -lt 2 -or `
+            [int]$governanceEvidenceParts[3] -ne 2 -or `
+            [int]$governanceEvidenceParts[4] -ne 2) {
+        throw "Phase 11 approval, rejection, audit, tool, or kill-switch evidence is incorrect"
     }
     $onboardingDraftCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM business_onboarding_drafts"
@@ -1436,8 +1720,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260824_10") {
-    throw "Workflow migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260824_11") {
+    throw "Governance migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 
