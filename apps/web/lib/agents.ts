@@ -108,6 +108,15 @@ export interface AgentRun {
     estimated_cost_microusd: number;
     attempts: AgentUsageCall[];
   };
+  executive_plan_trace: {
+    run_id: string;
+    agent_version_id: string;
+    context_id: string;
+    context_sha256: string;
+    source_references: string[];
+    output_context_matches: boolean;
+    advisory_only: true;
+  } | null;
 }
 
 export interface AgentDashboard {

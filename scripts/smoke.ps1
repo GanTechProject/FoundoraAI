@@ -1540,6 +1540,67 @@ Quasar retention research shows founder-led design studios prefer predictable an
         -ContentType "application/json" -WebSession $ownerSession `
         -Body (@{ business_id = $businessBId } | ConvertTo-Json -Compress) | Out-Null
 
+    # Phase 15 is deterministic and must remain independently observable even
+    # when a later legacy live-provider check is unavailable or quota-limited.
+    $phase15Dashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/agents" `
+        -WebSession $ownerSession
+    $phase15Ceo = $phase15Dashboard.definitions | Where-Object {
+        $_.agent_id -eq "founder-ceo"
+    } | Select-Object -First 1
+    $phase15Planning = $phase15Dashboard.definitions | Where-Object {
+        $_.agent_id -eq "chief-of-staff-planning"
+    } | Select-Object -First 1
+    foreach ($executiveAgent in @($phase15Ceo, $phase15Planning)) {
+        if (-not $executiveAgent -or `
+                $executiveAgent.version -ne 1 -or `
+                $executiveAgent.risk_level -ne "R0" -or `
+                $executiveAgent.maximum_autonomy -ne "manual_advisory_only" -or `
+                @($executiveAgent.allowed_tools).Count -ne 0 -or `
+                @($executiveAgent.allowed_skills).Count -ne 0 -or `
+                @($executiveAgent.assigned_skills).Count -ne 0 -or `
+                @($executiveAgent.data_access_scope.sources) -notcontains "current_tasks" -or `
+                @($executiveAgent.data_access_scope.sources) -notcontains "relevant_memories" -or `
+                @($executiveAgent.forbidden_actions) -notcontains "Tool invocation") {
+            throw "Phase 15 executive contract can exceed its advisory boundary"
+        }
+    }
+    if (@($phase15Ceo.output_schema.required) -notcontains "priorities" -or `
+            @($phase15Planning.output_schema.required) -notcontains "tasks" -or `
+            @($phase15Planning.output_schema.required) -notcontains "progress_review") {
+        throw "Phase 15 traceable priority, plan, or progress schemas are incomplete"
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/agents/founder-ceo/runs" `
+            -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ objective = "Propose priorities" } | ConvertTo-Json -Compress)
+    }
+    $phase15LoginResponse = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokeApiOrigin/auth/login" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin } -ContentType "application/json" `
+        -Body $loginBody -SessionVariable phase15WebSession
+    if ($phase15LoginResponse.StatusCode -ne 200) {
+        throw "Phase 15 UI inspection session could not authenticate"
+    }
+    $phase15CsrfCookie = $phase15WebSession.Cookies.GetCookies($smokeApiOrigin) | `
+        Where-Object { $_.Name -eq "csrf" } | Select-Object -First 1
+    Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
+        -Headers @{
+            Origin = $smokePublicOrigin
+            "X-CSRF-Token" = $phase15CsrfCookie.Value
+        } `
+        -ContentType "application/json" -WebSession $phase15WebSession `
+        -Body (@{ business_id = $businessBId } | ConvertTo-Json -Compress) | Out-Null
+    $phase15AgentsPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/agents" -WebSession $phase15WebSession
+    if (-not $phase15AgentsPage.Content.Contains("Founder / CEO Agent") -or `
+            -not $phase15AgentsPage.Content.Contains("Chief-of-Staff / Planning Agent") -or `
+            -not $phase15AgentsPage.Content.Contains("Queue manual R0 advisory run")) {
+        throw "Phase 15 protected executive registry UI did not render"
+    }
+    Write-Output "Phase 15 executive contract smoke passed"
+
     $gatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
         -WebSession $ownerSession
     $openAiStatus = $gatewayDashboard.providers | `
@@ -1657,20 +1718,49 @@ Quasar retention research shows founder-led design studios prefer predictable an
 
     $agentDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/agents" `
         -WebSession $ownerSession
+    $verificationAgent = $agentDashboard.definitions | Where-Object {
+        $_.agent_id -eq "runtime-verification-agent"
+    } | Select-Object -First 1
+    $ceoAgent = $agentDashboard.definitions | Where-Object {
+        $_.agent_id -eq "founder-ceo"
+    } | Select-Object -First 1
+    $planningAgent = $agentDashboard.definitions | Where-Object {
+        $_.agent_id -eq "chief-of-staff-planning"
+    } | Select-Object -First 1
     if ($agentDashboard.business_id -ne $businessBId -or `
-            $agentDashboard.definitions.Count -ne 1 -or `
-            $agentDashboard.definitions[0].agent_id -ne "runtime-verification-agent" -or `
-            $agentDashboard.definitions[0].version -ne 2 -or `
-            $agentDashboard.definitions[0].risk_level -ne "R0" -or `
-            $agentDashboard.definitions[0].maximum_autonomy -ne "manual_run_only" -or `
-            $agentDashboard.definitions[0].allowed_skills.Count -ne 1 -or `
-            $agentDashboard.definitions[0].allowed_skills[0] -ne `
+            $agentDashboard.definitions.Count -ne 3 -or `
+            -not $verificationAgent -or `
+            $verificationAgent.version -ne 2 -or `
+            $verificationAgent.risk_level -ne "R0" -or `
+            $verificationAgent.maximum_autonomy -ne "manual_run_only" -or `
+            $verificationAgent.allowed_skills.Count -ne 1 -or `
+            $verificationAgent.allowed_skills[0] -ne `
                 "summarize-business-context" -or `
-            $agentDashboard.definitions[0].assigned_skills.Count -ne 1 -or `
-            $agentDashboard.definitions[0].assigned_skills[0].skill_id -ne `
+            $verificationAgent.assigned_skills.Count -ne 1 -or `
+            $verificationAgent.assigned_skills[0].skill_id -ne `
                 "summarize-business-context" -or `
-            $agentDashboard.definitions[0].allowed_tools.Count -ne 0) {
+            $verificationAgent.allowed_tools.Count -ne 0) {
         throw "Versioned R0 agent definition or permission boundary is incorrect"
+    }
+    foreach ($executiveAgent in @($ceoAgent, $planningAgent)) {
+        if (-not $executiveAgent -or `
+                $executiveAgent.version -ne 1 -or `
+                $executiveAgent.risk_level -ne "R0" -or `
+                $executiveAgent.maximum_autonomy -ne "manual_advisory_only" -or `
+                @($executiveAgent.allowed_tools).Count -ne 0 -or `
+                @($executiveAgent.allowed_skills).Count -ne 0 -or `
+                @($executiveAgent.assigned_skills).Count -ne 0 -or `
+                @($executiveAgent.data_access_scope.sources) -notcontains "current_tasks" -or `
+                @($executiveAgent.data_access_scope.sources) -notcontains "relevant_memories" -or `
+                @($executiveAgent.forbidden_actions) -notcontains "Tool invocation" -or `
+                @($executiveAgent.forbidden_actions) -notcontains `
+                    "Creating, updating, queueing, or completing tasks or workflows") {
+            throw "Phase 15 executive contract can exceed its advisory boundary"
+        }
+    }
+    if (@($ceoAgent.output_schema.required) -notcontains "priorities" -or `
+            @($planningAgent.output_schema.required) -notcontains "tasks") {
+        throw "Phase 15 executive traceable plan schemas are incomplete"
     }
     $summarySkill = $agentDashboard.skills | Where-Object {
         $_.skill_id -eq "summarize-business-context"
@@ -1708,6 +1798,13 @@ Quasar retention research shows founder-led design studios prefer predictable an
             -Uri "$smokeApiOrigin/agents/runtime-verification-agent/runs" `
             -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
             -ContentType "application/json" -WebSession $ownerSession -Body $agentRunBody
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/agents/founder-ceo/runs" `
+            -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ objective = "Propose priorities" } | ConvertTo-Json -Compress)
     }
     $transientAgentFailures = 0
     $completedAgentRun = $null
@@ -1886,7 +1983,9 @@ Quasar retention research shows founder-led design studios prefer predictable an
         -Uri "$smokePublicOrigin/agents" -WebSession $ownerWebSession
     if (-not $webAgentsPage.Content.Contains("Assigned capability, inspectable execution") -or `
             -not $webAgentsPage.Content.Contains("Runtime Verification Agent") -or `
-            -not $webAgentsPage.Content.Contains("Queue manual R0 run") -or `
+            -not $webAgentsPage.Content.Contains("Founder / CEO Agent") -or `
+            -not $webAgentsPage.Content.Contains("Chief-of-Staff / Planning Agent") -or `
+            -not $webAgentsPage.Content.Contains("Queue manual R0 advisory run") -or `
             -not $webAgentsPage.Content.Contains("Summarize Business Context") -or `
             -not $webAgentsPage.Content.Contains("Generate Structured Plan") -or `
             -not $webAgentsPage.Content.Contains("Analyze Provided Data")) {
@@ -1990,8 +2089,8 @@ Quasar retention research shows founder-led design studios prefer predictable an
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_14") {
-        throw "Isolated memory-system migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_15") {
+        throw "Isolated executive-agent migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -2025,6 +2124,12 @@ Quasar retention research shows founder-led design studios prefer predictable an
         "SELECT (SELECT count(*) FROM memory_proposals WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_records WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_revisions WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_provenance WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_records WHERE id = '$factMemoryId' AND epistemic_status = 'fact' AND accepted_via = 'founder' AND status = 'active') || '|' || (SELECT count(*) FROM memory_records WHERE originating_proposal_id = '$($automaticMemory.id)' AND accepted_via = 'automatic' AND status = 'active') || '|' || (SELECT count(*) FROM memory_records WHERE id = '$memoryId' AND status = 'invalidated' AND current_revision = 3)"
     if ($LASTEXITCODE -ne 0 -or $memoryEvidence.Trim() -ne "4|3|4|4|1|1|1") {
         throw "Phase 14 policy, acceptance, merge, provenance, or invalidation evidence is incorrect"
+    }
+    $executiveEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM agents WHERE id IN ('founder-ceo', 'chief-of-staff-planning') AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id IN ('founder-ceo', 'chief-of-staff-planning') AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0)"
+    if ($LASTEXITCODE -ne 0 -or $executiveEvidence.Trim() -ne "2|2") {
+        throw "Phase 15 immutable advisory executive contracts are incorrect"
     }
     $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -2175,6 +2280,10 @@ finally {
     $agentRunBody = $null
     $unassignedSkillBody = $null
     $transientAgentFailures = $null
+    $phase15LoginResponse = $null
+    $phase15CsrfCookie = $null
+    $phase15AgentsPage = $null
+    $phase15WebSession = $null
 }
 
 $webResponse = Invoke-WebRequest -UseBasicParsing -Uri "$publicOrigin/login"
@@ -2197,8 +2306,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_14") {
-    throw "Memory-system migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_15") {
+    throw "Executive-agent migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

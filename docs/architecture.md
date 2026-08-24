@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 14 is a portable modular monorepo:
+The implementation through Phase 15 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -37,6 +37,9 @@ The implementation through Phase 14 is a portable modular monorepo:
   founder-safe acceptance policy, epistemic-status constraints, exact duplicate
   merging, immutable revisions, provenance, execution expiry, retrieval filters,
   and optimistic invalidation;
+- two immutable executive-agent contracts that produce evidence-bound proposed
+  priorities and dependency-aware plans, expose exact context traces, and remain
+  R0 manual advisory actors with no tools or mutation authority;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -73,7 +76,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 14
+## Implemented foundation through Phase 15
 
 The verified baseline is:
 
@@ -155,6 +158,10 @@ The verified baseline is:
   opt-in safe automatic acceptance, secret rejection, exact duplicate merges,
   immutable revision/provenance evidence, expiry/invalidation exclusion, and
   Business Brain retrieval;
+- immutable Founder/CEO and Chief-of-Staff definitions whose durable runs pin
+  selected-business context identity and exact evidence references, with runtime
+  rejection of invented citations, unsafe approval claims, executed-plan claims,
+  invalid delegation targets, cyclic task graphs, and fabricated task progress;
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 
@@ -196,6 +203,8 @@ Dependencies should point inward toward domain contracts. Provider SDK types, OR
 - Memory retrieval is selected-business scoped below the query, excludes expired
   and invalidated records, never returns unscoped working memory, and cannot
   represent an assumption as a founder-approved fact.
+- Executive plans remain proposed, bind to the exact run context, and cannot
+  create tasks, workflows, approvals, spend, tool calls, or external side effects.
 - One action must ultimately be traceable from UI request through task, agent, skill, tool/provider, and result.
 - Tests must include timeouts, retries, duplicates, partial workflow failure, worker interruption, and approval bypass attempts as the relevant phases arrive.
 

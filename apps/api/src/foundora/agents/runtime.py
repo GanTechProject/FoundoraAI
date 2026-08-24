@@ -10,6 +10,10 @@ from typing import Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from foundora.agents.executive import (
+    executive_prompt_constraints,
+    validate_executive_output,
+)
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.infrastructure.database import get_session_factory
 from foundora.model_gateway.service import GatewayRequest, GatewayResult, ModelGateway
@@ -267,6 +271,7 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
             f"Permissions: {json.dumps(claim.skill_permissions, ensure_ascii=False)}. "
             f"Evaluation rubric: {json.dumps(claim.skill_evaluation_rubric, ensure_ascii=False)}."
         )
+    system_prompt += executive_prompt_constraints(claim.agent_id, claim.structured_input)
     return GatewayRequest(
         task_type=task_type,
         prompt=json.dumps(claim.structured_input, ensure_ascii=False, sort_keys=True),
@@ -326,6 +331,7 @@ class AgentRuntime:
                 raise AgentSchemaError("Agent output must be an object")
             output = cast(dict[str, object], raw_output)
             validate_schema(output, claim.output_schema)
+            validate_executive_output(claim.agent_id, claim.structured_input, output)
             await self._repository.complete(run_id, output)
         except AgentSchemaError as error:
             await self._repository.fail(run_id, "agent_schema_invalid", str(error))

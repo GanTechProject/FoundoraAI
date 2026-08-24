@@ -62,9 +62,10 @@ export default async function AgentsPage({
           <p className="eyebrow">FOUNDORA / SKILL REGISTRY</p>
           <h1>Assigned capability, inspectable execution</h1>
           <p className="lede">
-            Skills are immutable, schema-bound capability contracts. A run may
-            invoke only a skill assigned to its exact agent version, and every
-            Phase 08 skill is R0 with no tools or external side effects.
+            Agent and skill contracts are immutable and version-pinned. The
+            Founder/CEO and Chief-of-Staff produce grounded, proposed plans with
+            source traceability; they cannot execute tools, create tasks, grant
+            approvals, spend, or claim a delegation occurred.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -198,12 +199,21 @@ export default async function AgentsPage({
                     value={definition.agent_id}
                   />
                   <label htmlFor={`objective-${definition.agent_id}`}>
-                    Read-only objective
+                    {definition.agent_id === "founder-ceo" ||
+                    definition.agent_id === "chief-of-staff-planning"
+                      ? "Founder objective for advisory planning"
+                      : "Read-only objective"}
                   </label>
                   <textarea
                     id={`objective-${definition.agent_id}`}
                     name="objective"
-                    defaultValue="Inspect the selected business context and identify its most important grounded observation."
+                    defaultValue={
+                      definition.agent_id === "founder-ceo"
+                        ? "Review the current business state and propose the most important grounded priorities and specialist work."
+                        : definition.agent_id === "chief-of-staff-planning"
+                          ? "Turn the current objective and business state into a proposed, dependency-aware plan."
+                          : "Inspect the selected business context and identify its most important grounded observation."
+                    }
                     minLength={1}
                     maxLength={500}
                     rows={3}
@@ -234,7 +244,7 @@ export default async function AgentsPage({
                     rows={3}
                   />
                   <button type="submit" disabled={!definition.enabled}>
-                    Queue manual R0 run
+                    Queue manual R0 advisory run
                   </button>
                 </form>
               </article>
@@ -395,6 +405,42 @@ export default async function AgentsPage({
                   </pre>
                 </article>
               </div>
+              {selectedRun.executive_plan_trace ? (
+                <article className="panel">
+                  <p className="eyebrow">EXECUTIVE PLAN TRACE</p>
+                  <h3>Pinned advisory evidence</h3>
+                  <div className="agent-contract-grid">
+                    <div>
+                      <span>Context ID</span>
+                      <code>{selectedRun.executive_plan_trace.context_id}</code>
+                    </div>
+                    <div>
+                      <span>Context integrity</span>
+                      <strong>
+                        {selectedRun.executive_plan_trace.output_context_matches
+                          ? "Output matches pinned context"
+                          : "No validated output match yet"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Authority</span>
+                      <strong>Advisory only; nothing executed</strong>
+                    </div>
+                  </div>
+                  <details>
+                    <summary>Inspect exact included source references</summary>
+                    <ul>
+                      {selectedRun.executive_plan_trace.source_references.map(
+                        (reference) => (
+                          <li key={reference}>
+                            <code>{reference}</code>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </details>
+                </article>
+              ) : null}
               {selectedRun.usage.attempts.length ? (
                 <div className="table-wrap">
                   <table>

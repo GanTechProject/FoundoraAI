@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 
+from foundora.agents.executive import EXECUTIVE_AGENT_IDS
 from foundora.agents.schema import AgentSchemaError
 from foundora.agents.service import (
     AgentDashboard,
@@ -127,6 +128,16 @@ class AgentUsageView(BaseModel):
     attempts: list[AgentUsageCallView]
 
 
+class ExecutivePlanTraceView(BaseModel):
+    run_id: uuid.UUID
+    agent_version_id: uuid.UUID
+    context_id: str
+    context_sha256: str
+    source_references: list[str]
+    output_context_matches: bool
+    advisory_only: Literal[True] = True
+
+
 class AgentRunView(BaseModel):
     id: uuid.UUID
     business_id: uuid.UUID
@@ -151,6 +162,7 @@ class AgentRunView(BaseModel):
     cancelled_at: datetime | None
     messages: list[AgentMessageView]
     usage: AgentUsageView
+    executive_plan_trace: ExecutivePlanTraceView | None
 
 
 class AgentDashboardView(BaseModel):
@@ -236,6 +248,37 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
         )
         for call in record.gateway_calls
     ]
+    trace: ExecutivePlanTraceView | None = None
+    if run.agent_id in EXECUTIVE_AGENT_IDS:
+        context_id = run.structured_input.get("context_id")
+        context_sha256 = run.structured_input.get("context_sha256")
+        business_context = run.structured_input.get("business_context")
+        source_references: list[str] = []
+        if isinstance(business_context, dict):
+            sources = business_context.get("sources")
+            if isinstance(sources, list):
+                source_references = sorted(
+                    {
+                        reference
+                        for item in sources
+                        if isinstance(item, dict)
+                        and isinstance((reference := item.get("source_reference")), str)
+                    }
+                )
+        if isinstance(context_id, str) and isinstance(context_sha256, str):
+            output_context_id = (
+                run.structured_output.get("context_id")
+                if isinstance(run.structured_output, dict)
+                else None
+            )
+            trace = ExecutivePlanTraceView(
+                run_id=run.id,
+                agent_version_id=run.agent_version_id,
+                context_id=context_id,
+                context_sha256=context_sha256,
+                source_references=source_references,
+                output_context_matches=output_context_id == context_id,
+            )
     return AgentRunView(
         id=run.id,
         business_id=run.business_id,
@@ -274,6 +317,7 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
             estimated_cost_microusd=sum(item.estimated_cost_microusd for item in attempts),
             attempts=attempts,
         ),
+        executive_plan_trace=trace,
     )
 
 

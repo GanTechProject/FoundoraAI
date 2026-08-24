@@ -111,5 +111,20 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 35. Phase 14 adds a conservative secret-pattern guard and stores no prompts or
     model output. Production retention, classification, and deletion policy
     remain required before regulated or customer data is introduced.
+36. Phase 15 reuses the immutable agent run as the traceable proposed-plan
+    artifact. It does not create a competing plan table before Phase 43 defines
+    governed autonomous plan materialization.
+37. Executive agents are R0 and `manual_advisory_only`, with no assigned skill or
+    tool. Delegation fields are requests, never proof that another agent was
+    queued, a task was created, or work occurred.
+38. Executive output copies the pinned context ID and cites only exact included
+    source references. Runtime semantic checks reject invented evidence after
+    structured schema validation and before durable completion.
+39. CEO risk labels cannot waive founder authority: R3, R4, and R5 priorities
+    must declare approval required. Existing governance still decides whether
+    any future action is authorized at execution time.
+40. Planning-agent progress review can refer only to included current-task
+    sources. Proposed task dependencies must refer to unique tasks and be
+    acyclic; they are not written into the Phase 09 task engine.
 
 Other questions can remain open until their named phase.
