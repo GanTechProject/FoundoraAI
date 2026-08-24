@@ -443,6 +443,87 @@ export async function retryTask(taskId: string): Promise<never> {
   redirect(`/tasks?task=${encodeURIComponent(taskId)}&updated=retried`);
 }
 
+function workflowError(response: Response): string {
+  if (response.status === 404) return "not-found";
+  if (response.status === 409) return "conflict";
+  if (response.status === 422) return "invalid";
+  return "unavailable";
+}
+
+async function workflowMutation(
+  path: string,
+  body: Record<string, unknown> | undefined,
+): Promise<Response> {
+  try {
+    return await authenticatedApiRequest(path, body);
+  } catch {
+    redirect("/workflows?error=unavailable");
+  }
+}
+
+export async function startWorkflow(formData: FormData): Promise<never> {
+  let input: Record<string, unknown>;
+  try {
+    const value: unknown = JSON.parse(field(formData, "input"));
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      redirect("/workflows?error=invalid");
+    }
+    input = value as Record<string, unknown>;
+  } catch {
+    redirect("/workflows?error=invalid");
+  }
+  const workflowId = field(formData, "workflow_id");
+  const response = await workflowMutation(
+    `/workflows/${encodeURIComponent(workflowId)}/runs`,
+    { input, task_id: field(formData, "task_id") || null },
+  );
+  if (!response.ok) {
+    redirect(`/workflows?error=${workflowError(response)}`);
+  }
+  const value: unknown = await response.json();
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { id?: unknown }).id !== "string"
+  ) {
+    redirect("/workflows?error=unavailable");
+  }
+  redirect(`/workflows?run=${(value as { id: string }).id}&updated=queued`);
+}
+
+export async function resumeWorkflow(
+  runId: string,
+  decision: "approved" | "rejected" | null,
+): Promise<never> {
+  const response = await workflowMutation(
+    `/workflows/runs/${encodeURIComponent(runId)}/resume`,
+    {
+      idempotency_key: `ui:${runId}:${crypto.randomUUID()}`,
+      decision,
+      input: {},
+    },
+  );
+  if (!response.ok) {
+    redirect(
+      `/workflows?run=${encodeURIComponent(runId)}&error=${workflowError(response)}`,
+    );
+  }
+  redirect(`/workflows?run=${encodeURIComponent(runId)}&updated=resumed`);
+}
+
+export async function cancelWorkflow(runId: string): Promise<never> {
+  const response = await workflowMutation(
+    `/workflows/runs/${encodeURIComponent(runId)}/cancel`,
+    undefined,
+  );
+  if (!response.ok) {
+    redirect(
+      `/workflows?run=${encodeURIComponent(runId)}&error=${workflowError(response)}`,
+    );
+  }
+  redirect(`/workflows?run=${encodeURIComponent(runId)}&updated=cancelled`);
+}
+
 export async function logout(): Promise<never> {
   try {
     await authenticatedApiRequest("/auth/logout", undefined);

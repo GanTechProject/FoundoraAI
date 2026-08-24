@@ -61,5 +61,13 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 18. Task events are append-only aggregate history, not the Phase 12 event bus.
     `waiting_approval` records lifecycle state but cannot grant approval before
     the Phase 11 governance runtime exists.
+19. Phase 10 stores reusable workflow identity separately from immutable versions;
+    every selected-business run pins one exact version and pre-creates its durable
+    step ledger before queue delivery.
+20. Phase 10 approval steps are owner checkpoints only. They do not grant policy,
+    risk, spend, or external-tool authority before Phase 11.
+21. Phase 10 permits only code-reviewed internal R0 tools and delegates agent steps
+    through pinned agent runs. External tool adapters remain disabled until their
+    governance and provider phases.
 
 Other questions can remain open until their named phase.

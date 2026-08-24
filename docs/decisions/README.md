@@ -16,5 +16,6 @@
 | [ADR-0012](ADR-0012-versioned-durable-agent-runtime.md) | Immutable agent versions with durable worker-owned runs | Accepted |
 | [ADR-0013](ADR-0013-immutable-versioned-skill-assignments.md) | Immutable skill versions with exact agent assignments | Accepted |
 | [ADR-0014](ADR-0014-transactional-task-lifecycle.md) | Transactional task lifecycle with dependency gates and idempotent retries | Accepted |
+| [ADR-0015](ADR-0015-versioned-durable-workflow-coordinator.md) | Version-pinned durable workflow coordination | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

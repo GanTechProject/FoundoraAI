@@ -455,6 +455,148 @@ class TaskEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class Workflow(Base):
+    __tablename__ = "workflows"
+    __table_args__ = (CheckConstraint("current_version > 0", name="ck_workflows_current_version"),)
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(160))
+    enabled: Mapped[bool] = mapped_column(default=True)
+    current_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowVersion(Base):
+    __tablename__ = "workflow_versions"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_workflow_versions_version"),
+        UniqueConstraint("workflow_id", "version", name="uq_workflow_versions_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("workflows.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(Text)
+    input_schema: Mapped[dict[str, object]] = mapped_column(JSON)
+    output_schema: Mapped[dict[str, object]] = mapped_column(JSON)
+    definition: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowRun(Base):
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'waiting', 'waiting_approval', "
+            "'waiting_agent', 'completed', 'failed', 'cancelled')",
+            name="ck_workflow_runs_status",
+        ),
+        CheckConstraint(
+            "worker_recovery_count BETWEEN 0 AND 3",
+            name="ck_workflow_runs_worker_recovery_count",
+        ),
+        Index("ix_workflow_runs_business_created", "business_id", "created_at"),
+        Index("ix_workflow_runs_business_status", "business_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id", ondelete="RESTRICT"))
+    workflow_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_versions.id", ondelete="RESTRICT"), index=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(24))
+    structured_input: Mapped[dict[str, object]] = mapped_column(JSON)
+    structured_output: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    current_step_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    worker_recovery_count: Mapped[int] = mapped_column(SmallInteger, default=0)
+    created_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WorkflowStepRun(Base):
+    __tablename__ = "workflow_step_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "step_type IN ('tool', 'agent', 'approval', 'wait')",
+            name="ck_workflow_step_runs_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'waiting', 'waiting_approval', "
+            "'waiting_agent', 'completed', 'skipped', 'failed', 'cancelled', 'compensated')",
+            name="ck_workflow_step_runs_status",
+        ),
+        CheckConstraint(
+            "max_retries BETWEEN 0 AND 10 AND attempt_count BETWEEN 0 AND max_retries + 1",
+            name="ck_workflow_step_runs_attempts",
+        ),
+        UniqueConstraint("workflow_run_id", "step_key", name="uq_workflow_step_runs_key"),
+        Index("ix_workflow_step_runs_run_sequence", "workflow_run_id", "sequence"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True
+    )
+    step_key: Mapped[str] = mapped_column(String(80))
+    sequence: Mapped[int] = mapped_column(Integer)
+    step_type: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    attempt_count: Mapped[int] = mapped_column(SmallInteger, default=0)
+    max_retries: Mapped[int] = mapped_column(SmallInteger, default=0)
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    structured_input: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    structured_output: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WorkflowEvent(Base):
+    __tablename__ = "workflow_events"
+    __table_args__ = (
+        CheckConstraint("sequence > 0", name="ck_workflow_events_sequence"),
+        UniqueConstraint("workflow_run_id", "sequence", name="uq_workflow_events_sequence"),
+        UniqueConstraint(
+            "workflow_run_id", "event_type", "idempotency_key", name="uq_workflow_events_key"
+        ),
+        Index("ix_workflow_events_run_created", "workflow_run_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workflow_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(40))
+    step_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    actor_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    details: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ModelGatewayCall(Base):
     __tablename__ = "model_gateway_calls"
     __table_args__ = (

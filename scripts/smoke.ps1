@@ -71,6 +71,24 @@ function Wait-ForAgentRun {
     throw "Agent run did not reach a terminal state: $Uri"
 }
 
+function Wait-ForWorkflowState {
+    param(
+        [string]$Uri,
+        [object]$WebSession,
+        [string[]]$ExpectedStates,
+        [int]$Attempts = 30
+    )
+    foreach ($attempt in 1..$Attempts) {
+        $run = Invoke-RestMethod -Uri $Uri -WebSession $WebSession
+        if ($run.status -in $ExpectedStates) { return $run }
+        if ($run.status -in @("failed", "cancelled")) {
+            throw "Workflow reached unexpected terminal state $($run.status): $Uri"
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw "Workflow did not reach $($ExpectedStates -join ', '): $Uri"
+}
+
 function Invoke-WithTransientHttpRetry {
     param(
         [scriptblock]$Request,
@@ -184,6 +202,9 @@ try {
     }
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/agents"
+    }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/workflows"
     }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
@@ -406,6 +427,94 @@ try {
         throw "Task retry was not atomic and idempotent"
     }
 
+    $workflowRun = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/workflows/durable-checkpoint-workflow/runs" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            input = @{ message = "Phase 10 durable smoke"; include_branch = $true }
+            task_id = $dependentTaskId
+        } | ConvertTo-Json -Depth 4 -Compress)
+    $workflowRunId = [string]$workflowRun.id
+    $workflowRunUri = "$smokeApiOrigin/workflows/runs/$workflowRunId"
+    $workflowRun = Wait-ForWorkflowState -Uri $workflowRunUri `
+        -WebSession $ownerSession -ExpectedStates @("waiting_approval")
+    if ($workflowRun.current_step_key -ne "owner_checkpoint" -or `
+            @($workflowRun.steps | Where-Object { $_.status -eq "completed" }).Count -ne 2) {
+        throw "Workflow did not execute its dependency and conditional branch before approval"
+    }
+    $approvalResumeKey = "smoke:$runId:workflow-approval"
+    $approvalResumeBody = @{
+        idempotency_key = $approvalResumeKey
+        decision = "approved"
+        input = @{}
+    } | ConvertTo-Json -Depth 3 -Compress
+    Invoke-RestMethod -Uri "$workflowRunUri/resume" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body $approvalResumeBody | Out-Null
+    Invoke-RestMethod -Uri "$workflowRunUri/resume" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body $approvalResumeBody | Out-Null
+    $workflowRun = Wait-ForWorkflowState -Uri $workflowRunUri `
+        -WebSession $ownerSession -ExpectedStates @("waiting")
+    if ($workflowRun.current_step_key -ne "durable_wait") {
+        throw "Workflow did not resume from approval into its durable wait"
+    }
+    $waitResumeKey = "smoke:$runId:workflow-wait"
+    $waitResumeBody = @{
+        idempotency_key = $waitResumeKey
+        decision = $null
+        input = @{ evidence = "resumed" }
+    } | ConvertTo-Json -Depth 3 -Compress
+    Invoke-RestMethod -Uri "$workflowRunUri/resume" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body $waitResumeBody | Out-Null
+    $workflowRun = Wait-ForWorkflowState -Uri $workflowRunUri `
+        -WebSession $ownerSession -ExpectedStates @("completed")
+    if ($workflowRun.output.steps.finish.result -ne "workflow_complete" -or `
+            @($workflowRun.events | Where-Object { $_.event_type -eq "owner_resumed" }).Count -ne 2) {
+        throw "Workflow did not complete deterministically with idempotent resume evidence"
+    }
+    $rejectedWorkflow = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/workflows/durable-checkpoint-workflow/runs" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            input = @{ message = "Phase 10 rejection smoke"; include_branch = $false }
+            task_id = $null
+        } | ConvertTo-Json -Depth 4 -Compress)
+    $rejectedWorkflowId = [string]$rejectedWorkflow.id
+    $rejectedWorkflowUri = "$smokeApiOrigin/workflows/runs/$rejectedWorkflowId"
+    $rejectedWorkflow = Wait-ForWorkflowState -Uri $rejectedWorkflowUri `
+        -WebSession $ownerSession -ExpectedStates @("waiting_approval")
+    if (@($rejectedWorkflow.steps | Where-Object {
+                $_.key -eq "optional_branch" -and $_.status -eq "skipped"
+            }).Count -ne 1) {
+        throw "Workflow false conditional branch was not skipped deterministically"
+    }
+    $rejectionBody = @{
+        idempotency_key = "smoke:$runId:workflow-rejection"
+        decision = "rejected"
+        input = @{}
+    } | ConvertTo-Json -Depth 3 -Compress
+    $rejectedWorkflow = Invoke-RestMethod -Uri "$rejectedWorkflowUri/resume" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body $rejectionBody
+    if ($rejectedWorkflow.status -ne "failed" -or `
+            $rejectedWorkflow.error_type -ne "checkpoint_rejected" -or `
+            @($rejectedWorkflow.steps | Where-Object {
+                $_.key -eq "capture" -and $_.status -eq "compensated"
+            }).Count -ne 1 -or `
+            @($rejectedWorkflow.events | Where-Object {
+                $_.event_type -eq "step_compensated"
+            }).Count -ne 1) {
+        throw "Workflow rejection failure or reverse compensation was not deterministic"
+    }
+
     Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
         -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
         -ContentType "application/json" -WebSession $ownerSession `
@@ -426,6 +535,10 @@ try {
     }
     Assert-HttpStatus -ExpectedStatus 404 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/tasks/$dependentTaskId" `
+            -WebSession $ownerSession
+    }
+    Assert-HttpStatus -ExpectedStatus 404 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/workflows/runs/$workflowRunId" `
             -WebSession $ownerSession
     }
 
@@ -1096,6 +1209,13 @@ try {
             -not $webTasksPage.Content.Contains("Tasks by priority and due date")) {
         throw "Protected task ledger did not render"
     }
+    $webWorkflowsPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/workflows" -WebSession $ownerWebSession
+    if (-not $webWorkflowsPage.Content.Contains("Versioned execution, durable checkpoints") -or `
+            -not $webWorkflowsPage.Content.Contains("Durable checkpoint verification") -or `
+            -not $webWorkflowsPage.Content.Contains("Start pinned workflow")) {
+        throw "Protected workflow registry and execution controls did not render"
+    }
 
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
@@ -1151,8 +1271,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260823_09") {
-        throw "Isolated reliability migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260824_10") {
+        throw "Isolated workflow migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -1174,6 +1294,18 @@ try {
         "SELECT (SELECT count(*) FROM tasks WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM task_dependencies) || '|' || (SELECT count(*) FROM task_events WHERE task_id = '$dependentTaskId' AND event_type = 'retried') || '|' || (SELECT retry_count FROM tasks WHERE id = '$dependentTaskId')"
     if ($LASTEXITCODE -ne 0 -or $taskEngineEvidence.Trim() -ne "2|1|1|1") {
         throw "Durable task, dependency, event, or idempotent retry evidence is incorrect"
+    }
+    $workflowEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM workflow_runs WHERE id = '$workflowRunId' AND business_id = '$businessBId' AND status = 'completed') || '|' || (SELECT count(*) FROM workflow_step_runs WHERE workflow_run_id = '$workflowRunId' AND status = 'completed') || '|' || (SELECT count(*) FROM workflow_events WHERE workflow_run_id = '$workflowRunId' AND event_type = 'owner_resumed')"
+    if ($LASTEXITCODE -ne 0 -or $workflowEvidence.Trim() -ne "1|5|2") {
+        throw "Durable workflow run, steps, or idempotent resume evidence is incorrect"
+    }
+    $workflowFailureEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM workflow_runs WHERE id = '$rejectedWorkflowId' AND status = 'failed' AND error_type = 'checkpoint_rejected') || '|' || (SELECT count(*) FROM workflow_step_runs WHERE workflow_run_id = '$rejectedWorkflowId' AND status = 'compensated') || '|' || (SELECT count(*) FROM workflow_events WHERE workflow_run_id = '$rejectedWorkflowId' AND event_type = 'step_compensated')"
+    if ($LASTEXITCODE -ne 0 -or $workflowFailureEvidence.Trim() -ne "1|1|1") {
+        throw "Deterministic workflow failure or compensation evidence is incorrect"
     }
     $onboardingDraftCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM business_onboarding_drafts"
@@ -1304,8 +1436,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260823_09") {
-    throw "Reliability migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260824_10") {
+    throw "Workflow migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

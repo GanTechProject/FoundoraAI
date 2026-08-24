@@ -1,6 +1,6 @@
 # Foundora Implementation Status
 
-Status date: 2026-08-22
+Status date: 2026-08-24
 
 ## Status rules
 
@@ -24,7 +24,7 @@ Status date: 2026-08-22
 |    07 | Agent Registry & Runtime             | COMPLETE        | Versioned definitions, structured selected-business runs, recoverable and bounded durable lifecycle, worker execution through the model gateway, inspection, cancellation, persisted failures, linked usage, protected UI/API, and Docker acceptance gates pass                                        |
 |    08 | Skill Registry                       | COMPLETE        | Immutable versioned contracts, schemas, compatibility, prerequisites, tool requirements, permissions, R0 risk, fixtures, rubrics, exact agent-version assignments, pinned runs, protected UI/API, worker re-authorization, and full Docker acceptance gates pass                                       |
 |    09 | Task Engine                          | COMPLETE        | Durable selected-business tasks, goal links, acyclic dependencies, priority, founder/version-pinned agent ownership, explicit lifecycle, due dates, atomic idempotent retries, append-only events, paginated bulk loading, Business Brain context, protected UI/API, and Docker acceptance gates pass  |
-|    10 | Workflow Engine                      | NOT IMPLEMENTED | No workflow engine                                                                                                                                                                                                                                                                                     |
+|    10 | Workflow Engine                      | COMPLETE        | Immutable versioned DAG definitions, selected-business durable runs and step ledgers, conditions, internal R0 tools, pinned agent steps, owner/wait checkpoints, bounded retries, reverse compensation, idempotent resume, worker recovery, protected API/UI, and Docker acceptance gates pass          |
 |    11 | Policy, Risk & Approval Engine       | NOT IMPLEMENTED | No governance runtime                                                                                                                                                                                                                                                                                  |
 |    12 | Event Bus                            | NOT IMPLEMENTED | No event system                                                                                                                                                                                                                                                                                        |
 |    13 | Knowledge Ingestion                  | NOT IMPLEMENTED | No ingestion/retrieval system                                                                                                                                                                                                                                                                          |
@@ -84,4 +84,4 @@ Public SaaS signup, organizations/tenants, subscription billing, team RBAC, ente
 
 ## Next authorized phase
 
-None. Phase 09 is complete and the phase-gated specification requires a new explicit founder instruction before Phase 10 begins.
+None. Phase 10 is complete and the phase-gated specification requires a new explicit founder instruction before Phase 11 begins.

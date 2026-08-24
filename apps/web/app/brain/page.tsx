@@ -106,6 +106,9 @@ export default async function BusinessBrainPage({
           <Link className="text-link" href="/tasks">
             Tasks
           </Link>
+          <Link className="text-link" href="/workflows">
+            Workflows
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out
