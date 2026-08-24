@@ -83,6 +83,9 @@ export default async function AgentsPage({
           <Link className="text-link" href="/governance">
             Governance
           </Link>
+          <Link className="text-link" href="/events">
+            Events
+          </Link>
           <Link className="text-link" href="/settings/ai">
             AI gateway
           </Link>

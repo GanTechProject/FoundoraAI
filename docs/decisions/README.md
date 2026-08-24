@@ -18,5 +18,6 @@
 | [ADR-0014](ADR-0014-transactional-task-lifecycle.md) | Transactional task lifecycle with dependency gates and idempotent retries | Accepted |
 | [ADR-0015](ADR-0015-versioned-durable-workflow-coordinator.md) | Version-pinned durable workflow coordination | Accepted |
 | [ADR-0016](ADR-0016-execution-time-governance.md) | Execution-time governance with immutable policy evidence | Accepted |
+| [ADR-0017](ADR-0017-transactional-domain-event-delivery.md) | Transactional domain events with idempotent durable delivery | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

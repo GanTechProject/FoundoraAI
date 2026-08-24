@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 11 is a portable modular monorepo:
+The implementation through Phase 12 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -27,6 +27,9 @@ The implementation through Phase 11 is a portable modular monorepo:
   code-derived R0–R5 classification, selected-business autonomy/spend/tool
   controls, durable approvals, a global kill switch, and append-only audit
   evidence beneath workflow execution;
+- a transactional internal event bus with code-reviewed versioned contracts,
+  immutable business-scoped envelopes, per-consumer delivery state, atomic
+  handler completion, bounded retry, durable dead letters, and explicit redrive;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -63,7 +66,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 11
+## Implemented foundation through Phase 12
 
 The verified baseline is:
 
@@ -129,6 +132,14 @@ The verified baseline is:
   catalogs, selected-business autonomy/spend/permission controls, separate
   approval and authorization transitions, execution-time rechecks, a global kill
   switch, and durable audit evidence linked to workflow checkpoints and tools;
+- a PostgreSQL transactional outbox for `business.created`, `goal.created`,
+  `task.completed`, `task.failed`, and `approval.requested`, with event UUIDs,
+  UTC occurrence timestamps, schema versions, correlation/causation fields,
+  idempotency keys, and worker-reconciled consumer deliveries;
+- effectively-once database consumer effects: a handler result and its completed
+  delivery marker commit together, completed deliveries do not replay, failed
+  attempts use bounded exponential backoff, and exhaustion creates an inspectable
+  dead letter that can be redriven with optimistic state protection;
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 
@@ -161,6 +172,9 @@ Dependencies should point inward toward domain contracts. Provider SDK types, OR
   retry idempotency key can consume at most one bounded retry.
 - Workflow runs pin immutable versions; only dependency-ready steps advance, and
   owner checkpoint resumes are idempotent while waiting state remains durable.
+- Domain events are committed with their aggregate mutation; every registered
+  consumer has one durable delivery row, and Redis loss cannot erase an event or
+  its retry/dead-letter state.
 - One action must ultimately be traceable from UI request through task, agent, skill, tool/provider, and result.
 - Tests must include timeouts, retries, duplicates, partial workflow failure, worker interruption, and approval bypass attempts as the relevant phases arrive.
 

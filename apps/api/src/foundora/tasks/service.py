@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from foundora.auth.service import AuthContext
 from foundora.business.context import resolve_selected_business
+from foundora.events.service import publish_event
 from foundora.infrastructure.database import get_session_factory
 from foundora.models import (
     Agent,
@@ -307,6 +308,23 @@ class TaskService:
                         details={"error": error} if error else {},
                     )
                 )
+                if requested_status in {"completed", "failed"}:
+                    payload: dict[str, object] = {
+                        "task_id": str(task.id),
+                        "previous_status": previous,
+                    }
+                    if requested_status == "failed":
+                        payload["error"] = error
+                    await publish_event(
+                        database,
+                        business_id=business.id,
+                        event_type=f"task.{requested_status}",
+                        aggregate_type="task",
+                        aggregate_id=str(task.id),
+                        idempotency_key=f"task:{task.id}:{requested_status}",
+                        payload=payload,
+                        occurred_at=now,
+                    )
             return (await self._records(database, [task]))[0]
 
     async def retry(

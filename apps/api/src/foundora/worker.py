@@ -9,16 +9,26 @@ from rq import Queue, Worker
 
 from foundora.agents.recovery import recover_agent_runs
 from foundora.config import get_settings
+from foundora.events.service import dispatch_pending_events
 from foundora.infrastructure.database import close_database
 from foundora.logging import configure_logging
 from foundora.workflows.recovery import recover_workflow_runs
 
 
-async def _recover_and_close() -> tuple[int, int, int, int]:
+async def _recover_and_close() -> tuple[int, int, int, int, int, int, int]:
     try:
         agent_recovered, agent_failed = await recover_agent_runs()
         workflow_recovered, workflow_failed = await recover_workflow_runs()
-        return agent_recovered, agent_failed, workflow_recovered, workflow_failed
+        event_summary = await dispatch_pending_events(limit=100)
+        return (
+            agent_recovered,
+            agent_failed,
+            workflow_recovered,
+            workflow_failed,
+            event_summary.completed,
+            event_summary.retry_scheduled,
+            event_summary.dead_lettered,
+        )
     finally:
         await close_database()
 
@@ -26,9 +36,15 @@ async def _recover_and_close() -> tuple[int, int, int, int]:
 class FoundoraWorker(Worker):
     def run_maintenance_tasks(self) -> None:
         super().run_maintenance_tasks()  # type: ignore[no-untyped-call]
-        agent_recovered, agent_failed, workflow_recovered, workflow_failed = asyncio.run(
-            _recover_and_close()
-        )
+        (
+            agent_recovered,
+            agent_failed,
+            workflow_recovered,
+            workflow_failed,
+            events_completed,
+            events_retried,
+            events_dead_lettered,
+        ) = asyncio.run(_recover_and_close())
         if agent_recovered or agent_failed:
             logging.getLogger(__name__).warning(
                 "Agent run recovery reconciled durable state",
@@ -38,6 +54,11 @@ class FoundoraWorker(Worker):
             logging.getLogger(__name__).warning(
                 "Workflow run recovery reconciled durable state",
                 extra={"event": "workflow.run.recovered"},
+            )
+        if events_completed or events_retried or events_dead_lettered:
+            logging.getLogger(__name__).info(
+                "Domain event deliveries reconciled",
+                extra={"event": "domain_events.dispatched"},
             )
 
 
@@ -53,9 +74,15 @@ def main() -> None:
     )
     connection.ping()
     queue = Queue(settings.worker_queue, connection=connection)
-    agent_recovered, agent_failed, workflow_recovered, workflow_failed = asyncio.run(
-        _recover_and_close()
-    )
+    (
+        agent_recovered,
+        agent_failed,
+        workflow_recovered,
+        workflow_failed,
+        events_completed,
+        events_retried,
+        events_dead_lettered,
+    ) = asyncio.run(_recover_and_close())
     if agent_recovered or agent_failed:
         logger.warning(
             "Agent run recovery reconciled durable state",
@@ -65,6 +92,11 @@ def main() -> None:
         logger.warning(
             "Workflow run recovery reconciled durable state",
             extra={"event": "workflow.run.recovered"},
+        )
+    if events_completed or events_retried or events_dead_lettered:
+        logger.info(
+            "Domain event deliveries reconciled",
+            extra={"event": "domain_events.dispatched"},
         )
     worker = FoundoraWorker(
         [queue],

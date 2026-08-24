@@ -78,5 +78,15 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 24. The global kill switch is system-wide. Tool permissions, actions, approvals,
     spend, and autonomy remain selected-business scoped. Phase 11 adds no
     external provider tool or side effect.
+25. Phase 12 uses PostgreSQL as the transactional event/outbox and delivery
+    authority. Redis/RQ remains a work-delivery adapter and cannot be the sole
+    source of event truth.
+26. Each event contract and consumer name is versioned in code. A consumer's
+    database effects and completed marker commit in one transaction; completed
+    deliveries do not replay, while failed attempts use bounded backoff and then
+    enter a durable dead-letter state.
+27. Phase 12 publishes only implemented business, goal, task, and approval events.
+    Website, lead, campaign, and metric events remain unavailable until their
+    owning domains exist; no fabricated future event is emitted.
 
 Other questions can remain open until their named phase.

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from foundora.auth.service import AuthContext
 from foundora.business.context import NoSelectedBusiness, resolve_selected_business
+from foundora.events.service import publish_event
 from foundora.infrastructure.database import get_session_factory
 from foundora.models import (
     Business,
@@ -117,6 +118,16 @@ class BusinessService:
                         raise BusinessNotFound
                     database.add_all((business, preference, governance, *tool_permissions))
                     await database.flush()
+                    await publish_event(
+                        database,
+                        business_id=business.id,
+                        event_type="business.created",
+                        aggregate_type="business",
+                        aggregate_id=str(business.id),
+                        idempotency_key=f"business:{business.id}:created",
+                        payload={"business_id": str(business.id), "name": business.name},
+                        occurred_at=now,
+                    )
                     if session.selected_business_id is None:
                         session.selected_business_id = business.id
             return business
@@ -231,6 +242,17 @@ class BusinessService:
                     updated_at=now,
                 )
                 database.add(goal)
+                await database.flush()
+                await publish_event(
+                    database,
+                    business_id=business.id,
+                    event_type="goal.created",
+                    aggregate_type="goal",
+                    aggregate_id=str(goal.id),
+                    idempotency_key=f"goal:{goal.id}:created",
+                    payload={"goal_id": str(goal.id), "title": goal.title},
+                    occurred_at=now,
+                )
             return goal
 
     async def update_goal_status(

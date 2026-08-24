@@ -810,6 +810,78 @@ class GovernanceAuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class DomainEvent(Base):
+    __tablename__ = "domain_events"
+    __table_args__ = (
+        CheckConstraint("schema_version > 0", name="ck_domain_events_schema_version"),
+        UniqueConstraint(
+            "business_id",
+            "event_type",
+            "idempotency_key",
+            name="uq_domain_events_idempotency",
+        ),
+        Index("ix_domain_events_business_occurred", "business_id", "occurred_at"),
+        Index("ix_domain_events_type_occurred", "event_type", "occurred_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(120))
+    schema_version: Mapped[int] = mapped_column(SmallInteger, default=1)
+    aggregate_type: Mapped[str] = mapped_column(String(80))
+    aggregate_id: Mapped[str] = mapped_column(String(160))
+    idempotency_key: Mapped[str] = mapped_column(String(160))
+    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    causation_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("domain_events.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    payload: Mapped[dict[str, object]] = mapped_column(JSON)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EventDelivery(Base):
+    __tablename__ = "event_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'retry_wait', 'processing', 'completed', 'dead_letter')",
+            name="ck_event_deliveries_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts BETWEEN 1 AND 10 "
+            "AND attempt_count <= max_attempts",
+            name="ck_event_deliveries_attempts",
+        ),
+        CheckConstraint("redrive_count >= 0", name="ck_event_deliveries_redrives"),
+        UniqueConstraint("event_id", "consumer_name", name="uq_event_deliveries_consumer"),
+        Index("ix_event_deliveries_status_available", "status", "available_at"),
+        Index("ix_event_deliveries_consumer_status", "consumer_name", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("domain_events.id", ondelete="CASCADE"), index=True
+    )
+    consumer_name: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    attempt_count: Mapped[int] = mapped_column(SmallInteger, default=0)
+    max_attempts: Mapped[int] = mapped_column(SmallInteger, default=5)
+    redrive_count: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    last_error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    handler_result: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ModelGatewayCall(Base):
     __tablename__ = "model_gateway_calls"
     __table_args__ = (

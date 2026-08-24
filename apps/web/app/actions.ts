@@ -656,6 +656,23 @@ export async function authorizeGovernanceAction(
   redirect("/governance?updated=authorized");
 }
 
+export async function redriveEventDelivery(
+  deliveryId: string,
+  expectedRedriveCount: number,
+): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest(
+      `/events/deliveries/${encodeURIComponent(deliveryId)}/redrive`,
+      { expected_redrive_count: expectedRedriveCount },
+    );
+  } catch {
+    redirect("/events?error=unavailable");
+  }
+  if (!response.ok) redirect("/events?error=conflict");
+  redirect("/events?updated=redriven");
+}
+
 export async function logout(): Promise<never> {
   try {
     await authenticatedApiRequest("/auth/logout", undefined);

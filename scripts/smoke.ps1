@@ -209,6 +209,9 @@ try {
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/governance"
     }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/events"
+    }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
         ConvertTo-Json -Compress
@@ -772,6 +775,84 @@ try {
         throw "Global kill switch did not release after the enforcement smoke"
     }
 
+    Invoke-Checked {
+        docker exec $smokeApiContainer python -m foundora.events.dispatcher --limit 1000
+    }
+    $eventDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/events" `
+        -WebSession $ownerSession
+    $eventTypes = @($eventDashboard.events | ForEach-Object { $_.event_type })
+    foreach ($requiredEventType in @(
+            "business.created",
+            "goal.created",
+            "task.completed",
+            "task.failed",
+            "approval.requested"
+        )) {
+        if ($requiredEventType -notin $eventTypes) {
+            throw "Required Phase 12 event was not published: $requiredEventType"
+        }
+    }
+    $eventDeliveries = @($eventDashboard.events | ForEach-Object { $_.deliveries })
+    if ($eventDashboard.business_id -ne $businessBId -or `
+            $eventDashboard.contracts.Count -ne 5 -or `
+            @($eventDeliveries | Where-Object {
+                $_.status -ne "completed" -or $_.attempt_count -ne 1
+            }).Count -ne 0) {
+        throw "Registered Phase 12 handlers did not complete exactly as designed"
+    }
+    $deliveryAttemptsBefore = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT coalesce(sum(d.attempt_count), 0) FROM event_deliveries d JOIN domain_events e ON e.id = d.event_id WHERE e.business_id = '$businessBId'"
+    if ($LASTEXITCODE -ne 0) { throw "Could not inspect Phase 12 delivery attempts" }
+    Invoke-Checked {
+        docker exec $smokeApiContainer python -m foundora.events.dispatcher --limit 1000
+    }
+    $deliveryAttemptsAfter = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT coalesce(sum(d.attempt_count), 0) FROM event_deliveries d JOIN domain_events e ON e.id = d.event_id WHERE e.business_id = '$businessBId'"
+    if ($LASTEXITCODE -ne 0 -or `
+            $deliveryAttemptsAfter.Trim() -ne $deliveryAttemptsBefore.Trim()) {
+        throw "Completed Phase 12 handlers were invoked more than once"
+    }
+
+    $deadLetterDeliveryId = [guid]::NewGuid().ToString()
+    $eventProbeId = [string]$eventDashboard.events[0].id
+    docker compose exec -T postgres psql -U foundora -d $smokeDatabase -v ON_ERROR_STOP=1 `
+        -c "INSERT INTO event_deliveries (id, event_id, consumer_name, status, attempt_count, max_attempts, redrive_count, available_at, created_at, updated_at) VALUES ('$deadLetterDeliveryId', '$eventProbeId', 'foundora.missing-consumer.v1', 'pending', 0, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)" `
+        | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not prepare Phase 12 dead-letter probe" }
+    Invoke-Checked {
+        docker exec $smokeApiContainer python -m foundora.events.dispatcher --limit 10
+    }
+    $deadLetters = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/events?delivery_status=dead_letter" `
+        -WebSession $ownerSession
+    $deadLetter = @($deadLetters.events | ForEach-Object { $_.deliveries } | `
+        Where-Object { $_.id -eq $deadLetterDeliveryId }) | Select-Object -First 1
+    if (-not $deadLetter -or $deadLetter.status -ne "dead_letter" -or `
+            $deadLetter.attempt_count -ne 1 -or `
+            $deadLetter.last_error_type -ne "EventContractErrorForDelivery" -or `
+            $deadLetter.last_error_message -ne "The registered event handler failed") {
+        throw "Failed Phase 12 delivery did not enter the sanitized dead-letter state"
+    }
+    Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/events/deliveries/$deadLetterDeliveryId/redrive" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ expected_redrive_count = 0 } | ConvertTo-Json -Compress) | Out-Null
+    Invoke-Checked {
+        docker exec $smokeApiContainer python -m foundora.events.dispatcher --limit 10
+    }
+    Assert-HttpStatus -ExpectedStatus 409 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/events/deliveries/$deadLetterDeliveryId/redrive" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ expected_redrive_count = 0 } | ConvertTo-Json -Compress)
+    }
+
     Invoke-RestMethod -Uri "$smokeApiOrigin/businesses/select" -Method Post `
         -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
         -ContentType "application/json" -WebSession $ownerSession `
@@ -796,6 +877,21 @@ try {
             $alphaGovernance.actions.Count -ne 0 -or `
             $alphaGovernance.settings.autonomy_level -ne "OFF") {
         throw "Governance actions or selected-business controls crossed a business boundary"
+    }
+    $alphaEvents = Invoke-RestMethod -Uri "$smokeApiOrigin/events" `
+        -WebSession $ownerSession
+    if ($alphaEvents.business_id -ne $businessAId -or `
+            @($alphaEvents.events | Where-Object { $_.business_id -ne $businessAId }).Count -ne 0 -or `
+            @($alphaEvents.events | Where-Object { $_.aggregate_id -eq $businessBId }).Count -ne 0) {
+        throw "Domain events crossed the selected-business boundary"
+    }
+    Assert-HttpStatus -ExpectedStatus 404 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/events/deliveries/$deadLetterDeliveryId/redrive" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ expected_redrive_count = 1 } | ConvertTo-Json -Compress)
     }
     Assert-HttpStatus -ExpectedStatus 404 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/tasks/$dependentTaskId" `
@@ -1488,6 +1584,13 @@ try {
             -not $webGovernancePage.Content.Contains("Governance audit trail")) {
         throw "Protected governance controls and audit ledger did not render"
     }
+    $webEventsPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/events" -WebSession $ownerWebSession
+    if (-not $webEventsPage.Content.Contains("Durable domain events and handler deliveries") -or `
+            -not $webEventsPage.Content.Contains("Registered event routes") -or `
+            -not $webEventsPage.Content.Contains("business.created")) {
+        throw "Protected Phase 12 event ledger did not render real registered contracts"
+    }
 
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
@@ -1543,8 +1646,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260824_11") {
-        throw "Isolated governance migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_12") {
+        throw "Isolated event-bus migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -1590,6 +1693,18 @@ try {
             [int]$governanceEvidenceParts[3] -ne 2 -or `
             [int]$governanceEvidenceParts[4] -ne 2) {
         throw "Phase 11 approval, rejection, audit, tool, or kill-switch evidence is incorrect"
+    }
+    $eventBusEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM domain_events WHERE business_id = '$businessBId' AND event_type IN ('business.created', 'goal.created', 'task.completed', 'task.failed')) || '|' || (SELECT count(*) FROM domain_events WHERE business_id = '$businessBId' AND event_type = 'approval.requested') || '|' || (SELECT count(*) FROM event_deliveries d JOIN domain_events e ON e.id = d.event_id WHERE e.business_id = '$businessBId' AND d.consumer_name = 'foundora.event-audit.v1' AND d.status = 'completed' AND d.attempt_count = 1) || '|' || (SELECT count(*) FROM event_deliveries WHERE id = '$deadLetterDeliveryId' AND status = 'dead_letter' AND attempt_count = 1 AND redrive_count = 1) || '|' || (SELECT count(*) FROM (SELECT business_id, event_type, idempotency_key FROM domain_events GROUP BY business_id, event_type, idempotency_key HAVING count(*) > 1) duplicates)"
+    $eventBusEvidenceParts = $eventBusEvidence.Trim().Split("|")
+    if ($LASTEXITCODE -ne 0 -or $eventBusEvidenceParts.Count -ne 5 -or `
+            [int]$eventBusEvidenceParts[0] -ne 4 -or `
+            [int]$eventBusEvidenceParts[1] -lt 3 -or `
+            [int]$eventBusEvidenceParts[2] -lt 7 -or `
+            [int]$eventBusEvidenceParts[3] -ne 1 -or `
+            [int]$eventBusEvidenceParts[4] -ne 0) {
+        throw "Phase 12 event, idempotent delivery, or dead-letter evidence is incorrect"
     }
     $onboardingDraftCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM business_onboarding_drafts"
@@ -1720,8 +1835,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260824_11") {
-    throw "Governance migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_12") {
+    throw "Event-bus migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

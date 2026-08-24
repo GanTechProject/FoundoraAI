@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from foundora.auth.service import AuthContext
 from foundora.business.context import resolve_selected_business
+from foundora.events.service import publish_event
 from foundora.governance.registry import (
     ACTION_CATALOG,
     RISK_RANK,
@@ -420,6 +421,21 @@ class GovernanceService:
                 approval_request_id=approval.id,
                 actor_owner_id=created_by_owner_id,
                 details={"risk_class": risk_class, "prompt": approval.prompt},
+            )
+            await publish_event(
+                database,
+                business_id=business_id,
+                event_type="approval.requested",
+                aggregate_type="approval_request",
+                aggregate_id=str(approval.id),
+                idempotency_key=f"approval:{approval.id}:requested",
+                payload={
+                    "approval_request_id": str(approval.id),
+                    "action_id": str(action.id),
+                    "action_type": action.action_type,
+                    "risk_class": action.risk_class,
+                },
+                occurred_at=now,
             )
         elif status == "authorized":
             await _add_audit(

@@ -80,6 +80,9 @@ export default async function GovernancePage({
           <Link className="text-link" href="/tasks">
             Task engine
           </Link>
+          <Link className="text-link" href="/events">
+            Event bus
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out
