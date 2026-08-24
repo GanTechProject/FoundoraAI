@@ -20,5 +20,6 @@
 | [ADR-0016](ADR-0016-execution-time-governance.md) | Execution-time governance with immutable policy evidence | Accepted |
 | [ADR-0017](ADR-0017-transactional-domain-event-delivery.md) | Transactional domain events with idempotent durable delivery | Accepted |
 | [ADR-0018](ADR-0018-provider-neutral-knowledge-retrieval.md) | Provider-neutral knowledge ingestion and pgvector retrieval | Accepted |
+| [ADR-0019](ADR-0019-curated-provenance-first-memory.md) | Curated, provenance-first memory with explicit fact authority | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

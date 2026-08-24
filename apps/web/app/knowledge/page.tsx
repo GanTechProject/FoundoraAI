@@ -77,6 +77,9 @@ export default async function KnowledgePage({
           <Link className="text-link" href="/events">
             Events
           </Link>
+          <Link className="text-link" href="/memory">
+            Memory
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out

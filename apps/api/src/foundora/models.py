@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -999,6 +1000,262 @@ class DocumentChunk(Base):
     estimated_tokens: Mapped[int] = mapped_column(Integer)
     embedding_model: Mapped[str] = mapped_column(String(120))
     embedding: Mapped[list[float]] = mapped_column(Vector(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MemoryPolicy(Base):
+    __tablename__ = "memory_policies"
+    __table_args__ = (
+        CheckConstraint(
+            "minimum_confidence >= 0 AND minimum_confidence <= 1",
+            name="ck_memory_policies_confidence",
+        ),
+        CheckConstraint("revision > 0", name="ck_memory_policies_revision"),
+    )
+
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), primary_key=True
+    )
+    automatic_accept_types: Mapped[list[str]] = mapped_column(JSON)
+    minimum_confidence: Mapped[float] = mapped_column(Float)
+    revision: Mapped[int] = mapped_column(Integer)
+    updated_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MemoryProposal(Base):
+    __tablename__ = "memory_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "memory_type IN ('working', 'episodic', 'semantic', 'decision', "
+            "'preference', 'workflow', 'evaluation')",
+            name="ck_memory_proposals_type",
+        ),
+        CheckConstraint(
+            "epistemic_status IN ('observation', 'assumption', 'fact', 'decision', "
+            "'preference', 'procedure', 'evaluation')",
+            name="ck_memory_proposals_epistemic_status",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'rejected', 'merged')",
+            name="ck_memory_proposals_status",
+        ),
+        CheckConstraint(
+            "acceptance_route IN ('founder', 'automatic')",
+            name="ck_memory_proposals_acceptance_route",
+        ),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1", name="ck_memory_proposals_confidence"
+        ),
+        CheckConstraint("revision > 0", name="ck_memory_proposals_revision"),
+        CheckConstraint(
+            "source_kind IN ('founder_input', 'knowledge_chunk', 'task', "
+            "'agent_run', 'workflow_run')",
+            name="ck_memory_proposals_source_kind",
+        ),
+        CheckConstraint(
+            "(source_kind = 'founder_input' AND source_id IS NULL) OR "
+            "(source_kind <> 'founder_input' AND source_id IS NOT NULL)",
+            name="ck_memory_proposals_source_identity",
+        ),
+        CheckConstraint(
+            "execution_type IS NULL OR execution_type IN ('task', 'agent_run', 'workflow_run')",
+            name="ck_memory_proposals_execution_type",
+        ),
+        CheckConstraint(
+            "(memory_type = 'working' AND execution_type IS NOT NULL AND "
+            "execution_id IS NOT NULL AND expires_at IS NOT NULL) OR "
+            "(memory_type <> 'working' AND execution_type IS NULL AND execution_id IS NULL)",
+            name="ck_memory_proposals_working_scope",
+        ),
+        CheckConstraint(
+            "(memory_type = 'working' AND epistemic_status IN ('observation', 'assumption')) OR "
+            "(memory_type = 'episodic' AND epistemic_status = 'observation') OR "
+            "(memory_type = 'semantic' AND epistemic_status IN ('fact', 'assumption')) OR "
+            "(memory_type = 'decision' AND epistemic_status = 'decision') OR "
+            "(memory_type = 'preference' AND epistemic_status = 'preference') OR "
+            "(memory_type = 'workflow' AND epistemic_status = 'procedure') OR "
+            "(memory_type = 'evaluation' AND epistemic_status = 'evaluation')",
+            name="ck_memory_proposals_type_epistemic",
+        ),
+        Index("ix_memory_proposals_business_status", "business_id", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    memory_type: Mapped[str] = mapped_column(String(24))
+    epistemic_status: Mapped[str] = mapped_column(String(24))
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(16))
+    acceptance_route: Mapped[str] = mapped_column(String(16))
+    canonical_key: Mapped[str] = mapped_column(String(64))
+    execution_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_kind: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    source_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_label: Mapped[str] = mapped_column(String(200))
+    source_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_metadata: Mapped[dict[str, object]] = mapped_column(JSON)
+    requested_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    decided_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    resolution_memory_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("memory_records.id", ondelete="SET NULL", use_alter=True), nullable=True
+    )
+    decision_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MemoryRecord(Base):
+    __tablename__ = "memory_records"
+    __table_args__ = (
+        CheckConstraint(
+            "memory_type IN ('working', 'episodic', 'semantic', 'decision', "
+            "'preference', 'workflow', 'evaluation')",
+            name="ck_memory_records_type",
+        ),
+        CheckConstraint(
+            "epistemic_status IN ('observation', 'assumption', 'fact', 'decision', "
+            "'preference', 'procedure', 'evaluation')",
+            name="ck_memory_records_epistemic_status",
+        ),
+        CheckConstraint("status IN ('active', 'invalidated')", name="ck_memory_records_status"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_memory_records_confidence"),
+        CheckConstraint("current_revision > 0", name="ck_memory_records_revision"),
+        CheckConstraint(
+            "accepted_via IN ('founder', 'automatic')", name="ck_memory_records_accepted_via"
+        ),
+        CheckConstraint(
+            "(memory_type = 'working' AND execution_type IS NOT NULL AND "
+            "execution_id IS NOT NULL AND expires_at IS NOT NULL) OR "
+            "(memory_type <> 'working' AND execution_type IS NULL AND execution_id IS NULL)",
+            name="ck_memory_records_working_scope",
+        ),
+        CheckConstraint(
+            "epistemic_status <> 'fact' OR accepted_via = 'founder'",
+            name="ck_memory_records_fact_founder",
+        ),
+        CheckConstraint(
+            "(memory_type = 'working' AND epistemic_status IN ('observation', 'assumption')) OR "
+            "(memory_type = 'episodic' AND epistemic_status = 'observation') OR "
+            "(memory_type = 'semantic' AND epistemic_status IN ('fact', 'assumption')) OR "
+            "(memory_type = 'decision' AND epistemic_status = 'decision') OR "
+            "(memory_type = 'preference' AND epistemic_status = 'preference') OR "
+            "(memory_type = 'workflow' AND epistemic_status = 'procedure') OR "
+            "(memory_type = 'evaluation' AND epistemic_status = 'evaluation')",
+            name="ck_memory_records_type_epistemic",
+        ),
+        UniqueConstraint("id", "business_id", name="uq_memory_records_scope"),
+        Index("ix_memory_records_business_active", "business_id", "status", "memory_type"),
+        Index("ix_memory_records_execution", "business_id", "execution_type", "execution_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    originating_proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memory_proposals.id", ondelete="RESTRICT"), unique=True
+    )
+    memory_type: Mapped[str] = mapped_column(String(24))
+    epistemic_status: Mapped[str] = mapped_column(String(24))
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(16))
+    accepted_via: Mapped[str] = mapped_column(String(16))
+    canonical_key: Mapped[str] = mapped_column(String(64))
+    execution_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_revision: Mapped[int] = mapped_column(Integer)
+    accepted_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class MemoryRevision(Base):
+    __tablename__ = "memory_revisions"
+    __table_args__ = (
+        CheckConstraint("revision > 0", name="ck_memory_revisions_revision"),
+        CheckConstraint(
+            "change_type IN ('accepted', 'merged')", name="ck_memory_revisions_change_type"
+        ),
+        CheckConstraint(
+            "created_by IN ('founder', 'automatic')", name="ck_memory_revisions_created_by"
+        ),
+        ForeignKeyConstraint(
+            ["memory_id", "business_id"],
+            ["memory_records.id", "memory_records.business_id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("memory_id", "revision", name="uq_memory_revisions_number"),
+        UniqueConstraint("memory_id", "business_id", "revision", name="uq_memory_revisions_scope"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    memory_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    proposal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memory_proposals.id", ondelete="RESTRICT"), unique=True
+    )
+    change_type: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float)
+    canonical_key: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[str] = mapped_column(String(16))
+    created_by_owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class MemoryProvenance(Base):
+    __tablename__ = "memory_provenance"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["memory_id", "business_id", "revision"],
+            [
+                "memory_revisions.memory_id",
+                "memory_revisions.business_id",
+                "memory_revisions.revision",
+            ],
+            ondelete="CASCADE",
+        ),
+        Index("ix_memory_provenance_memory_revision", "memory_id", "revision"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    memory_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    source_kind: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    source_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_label: Mapped[str] = mapped_column(String(200))
+    source_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_metadata: Mapped[dict[str, object]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

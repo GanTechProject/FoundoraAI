@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 13 is a portable modular monorepo:
+The implementation through Phase 14 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -33,6 +33,10 @@ The implementation through Phase 13 is a portable modular monorepo:
 - a provider-neutral knowledge ingestion domain with source provenance, bounded
   local object storage, explicit text extraction, immutable chunks, versioned
   local embeddings, pgvector HNSW cosine retrieval, citations, and invalidation;
+- a curated selected-business memory domain with seven explicit types,
+  founder-safe acceptance policy, epistemic-status constraints, exact duplicate
+  merging, immutable revisions, provenance, execution expiry, retrieval filters,
+  and optimistic invalidation;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -69,7 +73,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 13
+## Implemented foundation through Phase 14
 
 The verified baseline is:
 
@@ -147,6 +151,10 @@ The verified baseline is:
   storage behind an adapter, UTF-8 extraction and chunk offsets, SHA-256 evidence,
   deterministic 256-dimensional local embeddings, PostgreSQL pgvector HNSW
   retrieval, citation-preserving results, and optimistic invalidation;
+- curator proposals and seven typed memory records with explicit fact authority,
+  opt-in safe automatic acceptance, secret rejection, exact duplicate merges,
+  immutable revision/provenance evidence, expiry/invalidation exclusion, and
+  Business Brain retrieval;
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 
@@ -185,6 +193,9 @@ Dependencies should point inward toward domain contracts. Provider SDK types, OR
 - Knowledge retrieval is selected-business scoped below the query, uses only
   active sources and indexed documents, and never returns an uncited chunk or
   invalidated evidence.
+- Memory retrieval is selected-business scoped below the query, excludes expired
+  and invalidated records, never returns unscoped working memory, and cannot
+  represent an assumption as a founder-approved fact.
 - One action must ultimately be traceable from UI request through task, agent, skill, tool/provider, and result.
 - Tests must include timeouts, retries, duplicates, partial workflow failure, worker interruption, and approval bypass attempts as the relevant phases arrive.
 

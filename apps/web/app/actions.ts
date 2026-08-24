@@ -779,6 +779,108 @@ export async function invalidateKnowledgeDocument(
   redirect("/knowledge?updated=invalidated");
 }
 
+function memoryError(response: Response): string {
+  if (response.status === 404) return "not-found";
+  if (response.status === 409) return "conflict";
+  if (response.status === 422) return "invalid";
+  return "unavailable";
+}
+
+async function memoryMutation(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  try {
+    return await authenticatedApiRequest(path, body);
+  } catch {
+    redirect("/memory?error=unavailable");
+  }
+}
+
+export async function updateMemoryPolicy(formData: FormData): Promise<never> {
+  const response = await memoryMutation("/memory/policy", {
+    automatic_accept_types: formData
+      .getAll("automatic_accept_types")
+      .filter((value): value is string => typeof value === "string"),
+    minimum_confidence: Number(field(formData, "minimum_confidence")),
+    expected_revision: Number(field(formData, "expected_revision")),
+  });
+  if (!response.ok) redirect(`/memory?error=${memoryError(response)}`);
+  redirect("/memory?updated=policy");
+}
+
+export async function proposeMemory(formData: FormData): Promise<never> {
+  let sourceMetadata: Record<string, unknown> = {};
+  try {
+    const raw = field(formData, "source_metadata").trim();
+    if (raw) {
+      const value: unknown = JSON.parse(raw);
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        redirect("/memory?error=invalid");
+      }
+      sourceMetadata = value as Record<string, unknown>;
+    }
+  } catch {
+    redirect("/memory?error=invalid");
+  }
+  const expiry = field(formData, "expires_at");
+  const response = await memoryMutation("/memory/proposals", {
+    memory_type: field(formData, "memory_type"),
+    epistemic_status: field(formData, "epistemic_status"),
+    title: field(formData, "title"),
+    content: field(formData, "content"),
+    confidence: Number(field(formData, "confidence")),
+    execution_type: field(formData, "execution_type") || null,
+    execution_id: field(formData, "execution_id") || null,
+    expires_at: expiry ? new Date(expiry).toISOString() : null,
+    source_kind: field(formData, "source_kind"),
+    source_id: field(formData, "source_id") || null,
+    source_uri: field(formData, "source_uri") || null,
+    source_label: field(formData, "source_label"),
+    source_excerpt: field(formData, "source_excerpt") || null,
+    source_metadata: sourceMetadata,
+  });
+  if (!response.ok) redirect(`/memory?error=${memoryError(response)}`);
+  const value = (await response.json()) as { status?: string };
+  redirect(
+    `/memory?updated=${value.status === "pending" ? "proposed" : value.status}`,
+  );
+}
+
+export async function decideMemoryProposal(
+  proposalId: string,
+  accept: boolean,
+  formData: FormData,
+): Promise<never> {
+  const response = await memoryMutation(
+    `/memory/proposals/${encodeURIComponent(proposalId)}/${accept ? "accept" : "reject"}`,
+    {
+      expected_revision: Number(field(formData, "expected_revision")),
+      reason: field(formData, "reason"),
+    },
+  );
+  if (!response.ok) redirect(`/memory?error=${memoryError(response)}`);
+  const value = (await response.json()) as { status?: string };
+  redirect(
+    `/memory?updated=${value.status ?? (accept ? "accepted" : "rejected")}`,
+  );
+}
+
+export async function invalidateMemory(
+  memoryId: string,
+  formData: FormData,
+): Promise<never> {
+  const response = await memoryMutation(
+    `/memory/records/${encodeURIComponent(memoryId)}/invalidate`,
+    {
+      expected_revision: Number(field(formData, "expected_revision")),
+      reason: field(formData, "reason"),
+    },
+  );
+  if (!response.ok) redirect(`/memory?error=${memoryError(response)}`);
+  redirect("/memory?updated=invalidated");
+}
+
 export async function logout(): Promise<never> {
   try {
     await authenticatedApiRequest("/auth/logout", undefined);

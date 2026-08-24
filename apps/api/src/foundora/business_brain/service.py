@@ -15,10 +15,13 @@ from foundora.business.context import NoSelectedBusiness, resolve_selected_busin
 from foundora.infrastructure.database import get_session_factory
 from foundora.knowledge.embeddings import LocalFeatureHashEmbedding
 from foundora.knowledge.service import KnowledgeSearchHit, search_knowledge
+from foundora.memory.service import retrieve_memories
 from foundora.models import (
     ApprovedBusinessProfile,
     BusinessGoal,
     BusinessPreference,
+    MemoryProvenance,
+    MemoryRecord,
     Task,
     TaskDependency,
 )
@@ -33,6 +36,7 @@ SourceType = Literal[
     "operational_goals",
     "current_tasks",
     "knowledge",
+    "relevant_memories",
 ]
 SourceValidity = Literal["current", "stale", "invalidated"]
 SelectionStatus = Literal["included", "excluded"]
@@ -48,6 +52,7 @@ SOURCE_TYPES: tuple[SourceType, ...] = (
     "operational_goals",
     "current_tasks",
     "knowledge",
+    "relevant_memories",
 )
 
 FUTURE_SOURCE_TYPES: dict[str, str] = {
@@ -55,7 +60,6 @@ FUTURE_SOURCE_TYPES: dict[str, str] = {
     "customers": "No customer domain exists before Phase 33.",
     "decisions": "No governed decision domain exists yet.",
     "kpis": "No KPI domain exists before Phase 40.",
-    "relevant_memories": "No memory system exists before Phase 14.",
 }
 
 
@@ -65,6 +69,7 @@ class ContextBuildRequest:
     token_budget: int
     selected_source_types: frozenset[SourceType]
     knowledge_query: str | None = None
+    memory_query: str | None = None
 
 
 @dataclass(frozen=True)
@@ -214,6 +219,7 @@ def select_context(
                 "token_budget": request.token_budget,
                 "selected_source_types": sorted(request.selected_source_types),
                 "knowledge_query": request.knowledge_query,
+                "memory_query": request.memory_query,
                 "sources": source_fingerprint,
             }
         ).encode("utf-8")
@@ -291,6 +297,28 @@ class ContextService:
                 if "knowledge" in request.selected_source_types and request.knowledge_query
                 else []
             )
+            memories = (
+                await retrieve_memories(
+                    database,
+                    business_id=business.id,
+                    query=request.memory_query,
+                    limit=10,
+                )
+                if "relevant_memories" in request.selected_source_types
+                else []
+            )
+            memory_ids = [record.id for record in memories]
+            memory_provenance = (
+                list(
+                    await database.scalars(
+                        select(MemoryProvenance)
+                        .where(MemoryProvenance.memory_id.in_(memory_ids))
+                        .order_by(MemoryProvenance.memory_id, MemoryProvenance.revision)
+                    )
+                )
+                if memory_ids
+                else []
+            )
 
         candidates = [
             ContextCandidate(
@@ -349,6 +377,11 @@ class ContextService:
             unavailable["knowledge"] = "Knowledge context requires an explicit retrieval query."
         elif request.knowledge_query and not knowledge_hits:
             unavailable["knowledge"] = "No active knowledge chunk matched the retrieval query."
+        candidates.extend(self._memory_candidates(memories, memory_provenance))
+        if "relevant_memories" in request.selected_source_types and not memories:
+            unavailable["relevant_memories"] = (
+                "No active, unexpired durable memory matched the filters."
+            )
         return select_context(
             business_id=business.id,
             request=request,
@@ -387,6 +420,47 @@ class ContextService:
                 },
             )
             for hit in hits
+        ]
+
+    @staticmethod
+    def _memory_candidates(
+        memories: list[MemoryRecord], provenance: list[MemoryProvenance]
+    ) -> list[ContextCandidate]:
+        return [
+            ContextCandidate(
+                source_type="relevant_memories",
+                source_reference=f"memory/{record.id}",
+                source_version=str(record.current_revision),
+                authority=(
+                    "founder_approved_fact"
+                    if record.epistemic_status == "fact"
+                    else f"curated_{record.epistemic_status}"
+                ),
+                label=f"{record.memory_type}: {record.title}",
+                updated_at=record.updated_at,
+                validity="current",
+                content={
+                    "memory_id": str(record.id),
+                    "memory_type": record.memory_type,
+                    "epistemic_status": record.epistemic_status,
+                    "content": record.content,
+                    "confidence": record.confidence,
+                    "accepted_via": record.accepted_via,
+                    "provenance": [
+                        {
+                            "revision": item.revision,
+                            "source_kind": item.source_kind,
+                            "source_id": item.source_id,
+                            "source_uri": item.source_uri,
+                            "source_label": item.source_label,
+                            "source_metadata": item.source_metadata,
+                        }
+                        for item in provenance
+                        if item.memory_id == record.id
+                    ],
+                },
+            )
+            for record in memories
         ]
 
     @staticmethod

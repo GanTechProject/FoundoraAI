@@ -177,6 +177,103 @@ EVENT_CONTRACTS: Mapping[str, EventContract] = MappingProxyType(
                 ["source_id", "document_id", "revision"],
             ),
         ),
+        "memory.proposed": EventContract(
+            event_type="memory.proposed",
+            schema_version=1,
+            aggregate_type="memory_proposal",
+            description="The curator committed a selected-business memory proposal.",
+            payload_schema=_schema(
+                {
+                    "proposal_id": {"type": "string", "format": "uuid"},
+                    "memory_type": {
+                        "enum": [
+                            "working",
+                            "episodic",
+                            "semantic",
+                            "decision",
+                            "preference",
+                            "workflow",
+                            "evaluation",
+                        ]
+                    },
+                    "epistemic_status": {
+                        "enum": [
+                            "observation",
+                            "assumption",
+                            "fact",
+                            "decision",
+                            "preference",
+                            "procedure",
+                            "evaluation",
+                        ]
+                    },
+                    "acceptance_route": {"enum": ["founder", "automatic"]},
+                },
+                ["proposal_id", "memory_type", "epistemic_status", "acceptance_route"],
+            ),
+        ),
+        "memory.accepted": EventContract(
+            event_type="memory.accepted",
+            schema_version=1,
+            aggregate_type="memory_record",
+            description="A curated proposal became durable selected-business memory.",
+            payload_schema=_schema(
+                {
+                    "proposal_id": {"type": "string", "format": "uuid"},
+                    "memory_id": {"type": "string", "format": "uuid"},
+                    "memory_type": {"type": "string", "minLength": 1, "maxLength": 24},
+                    "epistemic_status": {"type": "string", "minLength": 1, "maxLength": 24},
+                    "revision": {"type": "integer", "minimum": 1},
+                    "accepted_via": {"enum": ["founder", "automatic"]},
+                },
+                [
+                    "proposal_id",
+                    "memory_id",
+                    "memory_type",
+                    "epistemic_status",
+                    "revision",
+                    "accepted_via",
+                ],
+            ),
+        ),
+        "memory.merged": EventContract(
+            event_type="memory.merged",
+            schema_version=1,
+            aggregate_type="memory_record",
+            description="An accepted exact duplicate merged into revisioned memory provenance.",
+            payload_schema=_schema(
+                {
+                    "proposal_id": {"type": "string", "format": "uuid"},
+                    "memory_id": {"type": "string", "format": "uuid"},
+                    "memory_type": {"type": "string", "minLength": 1, "maxLength": 24},
+                    "epistemic_status": {"type": "string", "minLength": 1, "maxLength": 24},
+                    "revision": {"type": "integer", "minimum": 2},
+                    "accepted_via": {"enum": ["founder", "automatic"]},
+                },
+                [
+                    "proposal_id",
+                    "memory_id",
+                    "memory_type",
+                    "epistemic_status",
+                    "revision",
+                    "accepted_via",
+                ],
+            ),
+        ),
+        "memory.invalidated": EventContract(
+            event_type="memory.invalidated",
+            schema_version=1,
+            aggregate_type="memory_record",
+            description="A stale selected-business memory was explicitly invalidated.",
+            payload_schema=_schema(
+                {
+                    "memory_id": {"type": "string", "format": "uuid"},
+                    "memory_type": {"type": "string", "minLength": 1, "maxLength": 24},
+                    "revision": {"type": "integer", "minimum": 2},
+                },
+                ["memory_id", "memory_type", "revision"],
+            ),
+        ),
     }
 )
 

@@ -86,6 +86,9 @@ export default async function GovernancePage({
           <Link className="text-link" href="/knowledge">
             Knowledge
           </Link>
+          <Link className="text-link" href="/memory">
+            Memory
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out

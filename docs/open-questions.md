@@ -97,5 +97,19 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 30. Registered knowledge is evidence with source/document/chunk citations. It is
     not automatically promoted to founder-approved fact or Phase 14 memory, and
     invalidated evidence is excluded below the retrieval boundary.
+31. Phase 14 keeps all seven memory types explicit and maps each to permitted
+    epistemic statuses. A semantic assumption remains an assumption; only an
+    explicit founder acceptance can create a semantic fact.
+32. Founder review is the default memory policy. Automatic acceptance is opt-in,
+    selected-business scoped, and limited to working, episodic, workflow, and
+    evaluation memory with verified system provenance and a confidence floor.
+33. Exact duplicates merge by deterministic normalized fingerprint. Similarity-
+    based merging is deferred because it could silently collapse different claims.
+34. Working memory is execution-scoped and expires within seven days. Other
+    memory can carry an optional expiry; expired and invalidated records are
+    excluded below retrieval without requiring a scheduler.
+35. Phase 14 adds a conservative secret-pattern guard and stores no prompts or
+    model output. Production retention, classification, and deletion policy
+    remain required before regulated or customer data is introduced.
 
 Other questions can remain open until their named phase.

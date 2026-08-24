@@ -89,6 +89,9 @@ export default async function AgentsPage({
           <Link className="text-link" href="/knowledge">
             Knowledge
           </Link>
+          <Link className="text-link" href="/memory">
+            Memory
+          </Link>
           <Link className="text-link" href="/settings/ai">
             AI gateway
           </Link>

@@ -220,6 +220,9 @@ try {
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/knowledge/search?q=evidence"
     }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/memory"
+    }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
         ConvertTo-Json -Compress
@@ -888,6 +891,176 @@ Quasar retention research shows founder-led design studios prefer predictable an
         throw "Invalidated Phase 13 knowledge remained retrievable"
     }
 
+    $memoryProposalBody = @{
+        memory_type = "semantic"
+        epistemic_status = "assumption"
+        title = "Quasar retention hypothesis"
+        content = "Quasar studios may retain better with predictable annual subscriptions."
+        confidence = 0.78
+        execution_type = $null
+        execution_id = $null
+        expires_at = $null
+        source_kind = "knowledge_chunk"
+        source_id = [string]$retrievedKnowledge.citation.chunk_id
+        source_uri = $null
+        source_label = "Ignored client label"
+        source_excerpt = $null
+        source_metadata = @{}
+    }
+    $memoryProposal = Invoke-RestMethod -Uri "$smokeApiOrigin/memory/proposals" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body ($memoryProposalBody | ConvertTo-Json -Depth 5 -Compress)
+    if ($memoryProposal.status -ne "pending" -or `
+            $memoryProposal.acceptance_route -ne "founder" -or `
+            $memoryProposal.epistemic_status -ne "assumption" -or `
+            -not ([string]$memoryProposal.source_label).Contains("Beta founder research") -or `
+            -not ([string]$memoryProposal.source_label).Contains("beta-evidence.md")) {
+        throw "Curator proposal did not preserve its assumption label or verified provenance"
+    }
+    $acceptedMemoryProposal = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/memory/proposals/$($memoryProposal.id)/accept" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            expected_revision = $memoryProposal.revision
+            reason = "Founder accepts this as a labeled hypothesis"
+        } | ConvertTo-Json -Compress)
+    $memoryId = [string]$acceptedMemoryProposal.resolution_memory_id
+    if ($acceptedMemoryProposal.status -ne "accepted" -or -not $memoryId) {
+        throw "Founder acceptance did not create durable memory"
+    }
+    $memoryBrain = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/brain/context?purpose=planning&token_budget=4096&sources=relevant_memories&memory_query=quasar" `
+        -WebSession $ownerSession
+    if (-not ([string]$memoryBrain.context).Contains($memoryId) -or `
+            -not ([string]$memoryBrain.context).Contains('"epistemic_status":"assumption"') -or `
+            -not ([string]$memoryBrain.context).Contains('"authority":"curated_assumption"')) {
+        throw "Labeled Phase 14 memory did not enter Business Brain with visible authority"
+    }
+
+    $duplicateMemoryProposal = Invoke-RestMethod -Uri "$smokeApiOrigin/memory/proposals" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            memory_type = "semantic"
+            epistemic_status = "assumption"
+            title = "  quasar   retention HYPOTHESIS "
+            content = "quasar studios may retain better with predictable annual subscriptions."
+            confidence = 0.81
+            execution_type = $null
+            execution_id = $null
+            expires_at = $null
+            source_kind = "founder_input"
+            source_id = $null
+            source_uri = "https://example.com/founder-review"
+            source_label = "Founder duplicate review"
+            source_excerpt = "Same hypothesis confirmed in founder review."
+            source_metadata = @{ review = "duplicate-check" }
+        } | ConvertTo-Json -Depth 5 -Compress)
+    $mergedMemoryProposal = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/memory/proposals/$($duplicateMemoryProposal.id)/accept" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            expected_revision = $duplicateMemoryProposal.revision
+            reason = "Merge exact duplicate provenance"
+        } | ConvertTo-Json -Compress)
+    if ($mergedMemoryProposal.status -ne "merged" -or `
+            $mergedMemoryProposal.resolution_memory_id -ne $memoryId) {
+        throw "Exact duplicate memory did not merge into the existing record"
+    }
+
+    $factProposal = Invoke-RestMethod -Uri "$smokeApiOrigin/memory/proposals" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            memory_type = "semantic"
+            epistemic_status = "fact"
+            title = "Approved subscription model"
+            content = "Annual subscriptions are the founder-approved commercial model."
+            confidence = 1.0
+            execution_type = $null
+            execution_id = $null
+            expires_at = $null
+            source_kind = "founder_input"
+            source_id = $null
+            source_uri = "https://example.com/founder-decision"
+            source_label = "Founder commercial review"
+            source_excerpt = "Founder explicitly approved the commercial model."
+            source_metadata = @{}
+        } | ConvertTo-Json -Depth 4 -Compress)
+    if ($factProposal.status -ne "pending" -or $factProposal.acceptance_route -ne "founder") {
+        throw "A semantic fact bypassed explicit founder acceptance"
+    }
+    $acceptedFact = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/memory/proposals/$($factProposal.id)/accept" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            expected_revision = $factProposal.revision
+            reason = "Founder confirms this as an approved fact"
+        } | ConvertTo-Json -Compress)
+    $factMemoryId = [string]$acceptedFact.resolution_memory_id
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/memory/proposals" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                memory_type = "semantic"; epistemic_status = "assumption"
+                title = "Credential probe"; content = "api_key=sk-abcdefghijklmnopqrstuvwxyz"
+                confidence = 0.9; execution_type = $null; execution_id = $null
+                expires_at = $null; source_kind = "founder_input"; source_id = $null
+                source_uri = $null; source_label = "Security probe"; source_excerpt = $null
+                source_metadata = @{}
+            } | ConvertTo-Json -Depth 4 -Compress)
+    }
+
+    $memoryPolicy = Invoke-RestMethod -Uri "$smokeApiOrigin/memory/policy" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            automatic_accept_types = @("episodic")
+            minimum_confidence = 0.9
+            expected_revision = 0
+        } | ConvertTo-Json -Compress)
+    $automaticMemory = Invoke-RestMethod -Uri "$smokeApiOrigin/memory/proposals" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            memory_type = "episodic"; epistemic_status = "observation"
+            title = "Task retry outcome"; content = "The dependency-gated task completed after one bounded retry."
+            confidence = 0.95; execution_type = $null; execution_id = $null; expires_at = $null
+            source_kind = "task"; source_id = $dependentTaskId; source_uri = $null
+            source_label = "Ignored task label"; source_excerpt = $null; source_metadata = @{}
+        } | ConvertTo-Json -Depth 4 -Compress)
+    if ($automaticMemory.status -ne "accepted" -or `
+            $automaticMemory.acceptance_route -ne "automatic" -or `
+            -not $automaticMemory.resolution_memory_id) {
+        throw "Configured safe automatic memory acceptance did not run"
+    }
+
+    Invoke-RestMethod -Uri "$smokeApiOrigin/memory/records/$memoryId/invalidate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ expected_revision = 2; reason = "Hypothesis superseded" } | ConvertTo-Json -Compress) | Out-Null
+    $invalidatedMemoryBrain = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/brain/context?purpose=planning&token_budget=4096&sources=relevant_memories&memory_query=quasar" `
+        -WebSession $ownerSession
+    if (([string]$invalidatedMemoryBrain.context).Contains($memoryId)) {
+        throw "Invalidated Phase 14 memory remained retrievable"
+    }
+
     Invoke-Checked {
         docker exec $smokeApiContainer python -m foundora.events.dispatcher --limit 1000
     }
@@ -903,19 +1076,23 @@ Quasar retention research shows founder-led design studios prefer predictable an
             "knowledge.source_registered",
             "knowledge.document_indexed",
             "knowledge.document_invalidated",
-            "knowledge.source_invalidated"
+            "knowledge.source_invalidated",
+            "memory.proposed",
+            "memory.accepted",
+            "memory.merged",
+            "memory.invalidated"
         )) {
         if ($requiredEventType -notin $eventTypes) {
-            throw "Required Phase 12/13 event was not published: $requiredEventType"
+            throw "Required Phase 12-14 event was not published: $requiredEventType"
         }
     }
     $eventDeliveries = @($eventDashboard.events | ForEach-Object { $_.deliveries })
     if ($eventDashboard.business_id -ne $businessBId -or `
-            $eventDashboard.contracts.Count -ne 9 -or `
+            $eventDashboard.contracts.Count -ne 13 -or `
             @($eventDeliveries | Where-Object {
                 $_.status -ne "completed" -or $_.attempt_count -ne 1
             }).Count -ne 0) {
-        throw "Registered Phase 12/13 handlers did not complete exactly as designed"
+        throw "Registered Phase 12-14 handlers did not complete exactly as designed"
     }
     $deliveryAttemptsBefore = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -1010,6 +1187,22 @@ Quasar retention research shows founder-led design studios prefer predictable an
     Assert-HttpStatus -ExpectedStatus 404 -Request {
         Invoke-WebRequest -UseBasicParsing `
             -Uri "$smokeApiOrigin/knowledge/sources/$knowledgeSourceId/invalidate" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ expected_revision = 1; reason = "Cross-business probe" } | ConvertTo-Json -Compress)
+    }
+    $alphaMemory = Invoke-RestMethod -Uri "$smokeApiOrigin/memory" `
+        -WebSession $ownerSession
+    if ($alphaMemory.business_id -ne $businessAId -or `
+            @($alphaMemory.memories | Where-Object {
+                    $_.id -in @($memoryId, $factMemoryId, [string]$automaticMemory.resolution_memory_id)
+                }).Count -ne 0) {
+        throw "Durable memory crossed the selected-business boundary"
+    }
+    Assert-HttpStatus -ExpectedStatus 404 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/memory/records/$factMemoryId/invalidate" `
             -Method Post `
             -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
             -ContentType "application/json" -WebSession $ownerSession `
@@ -1735,6 +1928,13 @@ Quasar retention research shows founder-led design studios prefer predictable an
             -not $webKnowledgePage.Content.Contains("Search active knowledge")) {
         throw "Protected Phase 13 knowledge ingestion and retrieval UI did not render"
     }
+    $webMemoryPage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/memory" -WebSession $ownerWebSession
+    if (-not $webMemoryPage.Content.Contains("Curated memory with visible provenance") -or `
+            -not $webMemoryPage.Content.Contains("Founder review is the safe default") -or `
+            -not $webMemoryPage.Content.Contains("Durable memory ledger")) {
+        throw "Protected Phase 14 curator, policy, and provenance UI did not render"
+    }
 
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
@@ -1790,8 +1990,8 @@ Quasar retention research shows founder-led design studios prefer predictable an
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_13") {
-        throw "Isolated knowledge-ingestion migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_14") {
+        throw "Isolated memory-system migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -1819,6 +2019,12 @@ Quasar retention research shows founder-led design studios prefer predictable an
             [int]$knowledgeEvidenceParts[3] -ne 1 -or `
             [int]$knowledgeEvidenceParts[4] -ne 1) {
         throw "Phase 13 source, document, chunk, embedding, or invalidation evidence is incorrect"
+    }
+    $memoryEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM memory_proposals WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_records WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_revisions WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_provenance WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM memory_records WHERE id = '$factMemoryId' AND epistemic_status = 'fact' AND accepted_via = 'founder' AND status = 'active') || '|' || (SELECT count(*) FROM memory_records WHERE originating_proposal_id = '$($automaticMemory.id)' AND accepted_via = 'automatic' AND status = 'active') || '|' || (SELECT count(*) FROM memory_records WHERE id = '$memoryId' AND status = 'invalidated' AND current_revision = 3)"
+    if ($LASTEXITCODE -ne 0 -or $memoryEvidence.Trim() -ne "4|3|4|4|1|1|1") {
+        throw "Phase 14 policy, acceptance, merge, provenance, or invalidation evidence is incorrect"
     }
     $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -1991,8 +2197,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_13") {
-    throw "Knowledge-ingestion migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_14") {
+    throw "Memory-system migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

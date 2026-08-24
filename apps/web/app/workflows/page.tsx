@@ -81,6 +81,9 @@ export default async function WorkflowsPage({
           <Link className="text-link" href="/knowledge">
             Knowledge
           </Link>
+          <Link className="text-link" href="/memory">
+            Memory
+          </Link>
           <Link className="text-link" href="/agents">
             Agents &amp; skills
           </Link>

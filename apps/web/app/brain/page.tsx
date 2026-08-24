@@ -22,6 +22,7 @@ const sourceLabels: Record<ContextSourceType, string> = {
   operational_goals: "Operational goals",
   current_tasks: "Current tasks",
   knowledge: "Retrieved knowledge",
+  relevant_memories: "Relevant curated memories",
 };
 
 function selectedSources(value: string | string[] | undefined) {
@@ -61,6 +62,7 @@ export default async function BusinessBrainPage({
     token_budget?: string;
     sources?: string | string[];
     knowledge_query?: string;
+    memory_query?: string;
   }>;
 }) {
   const auth = await getAuthSession();
@@ -72,11 +74,13 @@ export default async function BusinessBrainPage({
   const budget = tokenBudget(params.token_budget);
   const selectedPurpose = purpose(params.purpose);
   const knowledgeQuery = params.knowledge_query?.trim().slice(0, 500) ?? "";
+  const memoryQuery = params.memory_query?.trim().slice(0, 500) ?? "";
   const brain = await getBusinessContext({
     purpose: selectedPurpose,
     tokenBudget: budget,
     sourceTypes: sources,
     knowledgeQuery,
+    memoryQuery,
   });
   const included =
     brain?.sources.filter((source) => source.selection_status === "included") ??
@@ -121,6 +125,9 @@ export default async function BusinessBrainPage({
           </Link>
           <Link className="text-link" href="/knowledge">
             Knowledge
+          </Link>
+          <Link className="text-link" href="/memory">
+            Memory
           </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
@@ -189,6 +196,16 @@ export default async function BusinessBrainPage({
               defaultValue={knowledgeQuery}
               maxLength={500}
               placeholder="Required only when retrieved knowledge is selected"
+            />
+          </div>
+          <div>
+            <label htmlFor="memory-query">Memory text filter (optional)</label>
+            <input
+              id="memory-query"
+              name="memory_query"
+              defaultValue={memoryQuery}
+              maxLength={500}
+              placeholder="Filter active, unexpired curated memory"
             />
           </div>
           <button type="submit">Rebuild context</button>
