@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   adoptAuthCookies,
   authenticatedApiRequest,
+  authenticatedApiUpload,
   clearAuthCookies,
   loginApiRequest,
 } from "../lib/auth";
@@ -671,6 +672,111 @@ export async function redriveEventDelivery(
   }
   if (!response.ok) redirect("/events?error=conflict");
   redirect("/events?updated=redriven");
+}
+
+function knowledgeError(response: Response): string {
+  if (response.status === 404) return "not-found";
+  if (response.status === 409) return "conflict";
+  if ([413, 415, 422].includes(response.status)) return "invalid";
+  return "unavailable";
+}
+
+export async function registerKnowledgeSource(
+  formData: FormData,
+): Promise<never> {
+  let metadata: Record<string, unknown> = {};
+  const metadataText = field(formData, "metadata").trim();
+  if (metadataText) {
+    try {
+      const value: unknown = JSON.parse(metadataText);
+      if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        redirect("/knowledge?error=invalid");
+      }
+      metadata = value as Record<string, unknown>;
+    } catch {
+      redirect("/knowledge?error=invalid");
+    }
+  }
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest("/knowledge/sources", {
+      title: field(formData, "title"),
+      source_type: field(formData, "source_type"),
+      source_uri: field(formData, "source_uri") || null,
+      metadata,
+    });
+  } catch {
+    redirect("/knowledge?error=unavailable");
+  }
+  if (!response.ok) redirect(`/knowledge?error=${knowledgeError(response)}`);
+  redirect("/knowledge?updated=source");
+}
+
+export async function uploadKnowledgeDocument(
+  sourceId: string,
+  formData: FormData,
+): Promise<never> {
+  const file = formData.get("file");
+  if (!(file instanceof File) || !file.name || file.size === 0) {
+    redirect("/knowledge?error=invalid");
+  }
+  const query = new URLSearchParams({
+    filename: file.name,
+    file_media_type: file.type || "application/octet-stream",
+  });
+  let response: Response;
+  try {
+    response = await authenticatedApiUpload(
+      `/knowledge/sources/${encodeURIComponent(sourceId)}/documents?${query}`,
+      await file.arrayBuffer(),
+    );
+  } catch {
+    redirect("/knowledge?error=unavailable");
+  }
+  if (!response.ok) redirect(`/knowledge?error=${knowledgeError(response)}`);
+  redirect("/knowledge?updated=indexed");
+}
+
+export async function invalidateKnowledgeSource(
+  sourceId: string,
+  expectedRevision: number,
+  formData: FormData,
+): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest(
+      `/knowledge/sources/${encodeURIComponent(sourceId)}/invalidate`,
+      {
+        expected_revision: expectedRevision,
+        reason: field(formData, "reason"),
+      },
+    );
+  } catch {
+    redirect("/knowledge?error=unavailable");
+  }
+  if (!response.ok) redirect(`/knowledge?error=${knowledgeError(response)}`);
+  redirect("/knowledge?updated=invalidated");
+}
+
+export async function invalidateKnowledgeDocument(
+  documentId: string,
+  expectedRevision: number,
+  formData: FormData,
+): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest(
+      `/knowledge/documents/${encodeURIComponent(documentId)}/invalidate`,
+      {
+        expected_revision: expectedRevision,
+        reason: field(formData, "reason"),
+      },
+    );
+  } catch {
+    redirect("/knowledge?error=unavailable");
+  }
+  if (!response.ok) redirect(`/knowledge?error=${knowledgeError(response)}`);
+  redirect("/knowledge?updated=invalidated");
 }
 
 export async function logout(): Promise<never> {

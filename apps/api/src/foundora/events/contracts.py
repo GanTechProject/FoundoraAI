@@ -116,6 +116,67 @@ EVENT_CONTRACTS: Mapping[str, EventContract] = MappingProxyType(
                 ["approval_request_id", "action_id", "action_type", "risk_class"],
             ),
         ),
+        "knowledge.source_registered": EventContract(
+            event_type="knowledge.source_registered",
+            schema_version=1,
+            aggregate_type="knowledge_source",
+            description="A selected-business knowledge source was registered.",
+            payload_schema=_schema(
+                {
+                    "source_id": {"type": "string", "format": "uuid"},
+                    "source_type": {"enum": ["upload", "reference"]},
+                    "title": {"type": "string", "minLength": 1, "maxLength": 200},
+                },
+                ["source_id", "source_type", "title"],
+            ),
+        ),
+        "knowledge.document_indexed": EventContract(
+            event_type="knowledge.document_indexed",
+            schema_version=1,
+            aggregate_type="knowledge_document",
+            description="An uploaded knowledge document was extracted, chunked, and indexed.",
+            payload_schema=_schema(
+                {
+                    "source_id": {"type": "string", "format": "uuid"},
+                    "document_id": {"type": "string", "format": "uuid"},
+                    "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+                    "content_sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$",
+                    },
+                    "chunk_count": {"type": "integer", "minimum": 1},
+                },
+                ["source_id", "document_id", "filename", "content_sha256", "chunk_count"],
+            ),
+        ),
+        "knowledge.source_invalidated": EventContract(
+            event_type="knowledge.source_invalidated",
+            schema_version=1,
+            aggregate_type="knowledge_source",
+            description="A source and its currently indexed documents were invalidated.",
+            payload_schema=_schema(
+                {
+                    "source_id": {"type": "string", "format": "uuid"},
+                    "revision": {"type": "integer", "minimum": 2},
+                    "invalidated_document_count": {"type": "integer", "minimum": 0},
+                },
+                ["source_id", "revision", "invalidated_document_count"],
+            ),
+        ),
+        "knowledge.document_invalidated": EventContract(
+            event_type="knowledge.document_invalidated",
+            schema_version=1,
+            aggregate_type="knowledge_document",
+            description="One indexed knowledge document was invalidated.",
+            payload_schema=_schema(
+                {
+                    "source_id": {"type": "string", "format": "uuid"},
+                    "document_id": {"type": "string", "format": "uuid"},
+                    "revision": {"type": "integer", "minimum": 2},
+                },
+                ["source_id", "document_id", "revision"],
+            ),
+        ),
     }
 )
 

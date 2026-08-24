@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     BigInteger,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     SmallInteger,
@@ -880,6 +882,124 @@ class EventDelivery(Base):
     handler_result: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class KnowledgeSource(Base):
+    __tablename__ = "knowledge_sources"
+    __table_args__ = (
+        CheckConstraint("source_type IN ('upload', 'reference')", name="ck_knowledge_sources_type"),
+        CheckConstraint("status IN ('active', 'invalidated')", name="ck_knowledge_sources_status"),
+        CheckConstraint("revision > 0", name="ck_knowledge_sources_revision"),
+        UniqueConstraint("id", "business_id", name="uq_knowledge_sources_scope"),
+        Index("ix_knowledge_sources_business_status", "business_id", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    source_type: Mapped[str] = mapped_column(String(24))
+    title: Mapped[str] = mapped_column(String(200))
+    source_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    source_metadata: Mapped[dict[str, object]] = mapped_column("metadata", JSON)
+    status: Mapped[str] = mapped_column(String(16))
+    revision: Mapped[int] = mapped_column(Integer)
+    created_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class KnowledgeDocument(Base):
+    __tablename__ = "knowledge_documents"
+    __table_args__ = (
+        CheckConstraint("byte_size > 0", name="ck_knowledge_documents_byte_size"),
+        CheckConstraint(
+            "embedding_dimensions > 0", name="ck_knowledge_documents_embedding_dimensions"
+        ),
+        CheckConstraint(
+            "character_count > 0 AND chunk_count > 0",
+            name="ck_knowledge_documents_content_counts",
+        ),
+        CheckConstraint(
+            "status IN ('indexed', 'invalidated')", name="ck_knowledge_documents_status"
+        ),
+        CheckConstraint("revision > 0", name="ck_knowledge_documents_revision"),
+        UniqueConstraint(
+            "source_id", "content_sha256", name="uq_knowledge_documents_source_content"
+        ),
+        UniqueConstraint("id", "business_id", "source_id", name="uq_knowledge_documents_scope"),
+        UniqueConstraint("storage_key", name="uq_knowledge_documents_storage_key"),
+        ForeignKeyConstraint(
+            ["source_id", "business_id"],
+            ["knowledge_sources.id", "knowledge_sources.business_id"],
+            ondelete="CASCADE",
+        ),
+        Index("ix_knowledge_documents_business_status", "business_id", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    media_type: Mapped[str] = mapped_column(String(120))
+    storage_key: Mapped[str] = mapped_column(String(600), unique=True)
+    byte_size: Mapped[int] = mapped_column(Integer)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    extraction_version: Mapped[str] = mapped_column(String(80))
+    embedding_model: Mapped[str] = mapped_column(String(120))
+    embedding_dimensions: Mapped[int] = mapped_column(SmallInteger)
+    character_count: Mapped[int] = mapped_column(Integer)
+    chunk_count: Mapped[int] = mapped_column(Integer)
+    document_metadata: Mapped[dict[str, object]] = mapped_column("metadata", JSON)
+    status: Mapped[str] = mapped_column(String(16))
+    revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="ck_document_chunks_ordinal"),
+        CheckConstraint(
+            "start_character >= 0 AND end_character > start_character",
+            name="ck_document_chunks_offsets",
+        ),
+        CheckConstraint("estimated_tokens > 0", name="ck_document_chunks_tokens"),
+        UniqueConstraint("document_id", "ordinal", name="uq_document_chunks_ordinal"),
+        ForeignKeyConstraint(
+            ["document_id", "business_id", "source_id"],
+            [
+                "knowledge_documents.id",
+                "knowledge_documents.business_id",
+                "knowledge_documents.source_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        Index("ix_document_chunks_business_document", "business_id", "document_id", "ordinal"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    source_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    start_character: Mapped[int] = mapped_column(Integer)
+    end_character: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    estimated_tokens: Mapped[int] = mapped_column(Integer)
+    embedding_model: Mapped[str] = mapped_column(String(120))
+    embedding: Mapped[list[float]] = mapped_column(Vector(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class ModelGatewayCall(Base):

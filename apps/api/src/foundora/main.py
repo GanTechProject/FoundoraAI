@@ -19,6 +19,7 @@ from foundora.api.businesses import router as businesses_router
 from foundora.api.events import router as events_router
 from foundora.api.governance import router as governance_router
 from foundora.api.health import router as health_router
+from foundora.api.knowledge import router as knowledge_router
 from foundora.api.model_gateway import router as model_gateway_router
 from foundora.api.onboarding import router as onboarding_router
 from foundora.api.tasks import router as tasks_router
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     application.include_router(workflows_router)
     application.include_router(governance_router)
     application.include_router(events_router)
+    application.include_router(knowledge_router)
     return application
 
 

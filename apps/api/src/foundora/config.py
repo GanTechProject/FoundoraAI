@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     model_hard_max_output_tokens: int = 4096
     model_default_token_budget: int = 8192
     model_default_cost_budget_microusd: int = 100_000
+    knowledge_storage_backend: Literal["local"] = "local"
+    knowledge_storage_path: str = "/var/lib/foundora/knowledge"
+    knowledge_max_upload_bytes: int = 5_242_880
+    knowledge_max_extracted_characters: int = 1_000_000
     openai_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("FOUNDORA_OPENAI_API_KEY", "OPENAI_API_KEY"),
@@ -82,6 +86,8 @@ class Settings(BaseSettings):
         "model_hard_max_output_tokens",
         "model_default_token_budget",
         "model_default_cost_budget_microusd",
+        "knowledge_max_upload_bytes",
+        "knowledge_max_extracted_characters",
     )
     @classmethod
     def validate_positive_security_values(cls, value: int) -> int:
@@ -118,6 +124,12 @@ class Settings(BaseSettings):
             raise ValueError("default model token budget cannot exceed 1000000 tokens")
         if self.model_default_cost_budget_microusd > 10_000_000:
             raise ValueError("default model cost budget cannot exceed 10000000 micro-USD")
+        if self.knowledge_max_upload_bytes > 52_428_800:
+            raise ValueError("knowledge uploads cannot exceed 52428800 bytes")
+        if self.knowledge_max_extracted_characters > 10_000_000:
+            raise ValueError("extracted knowledge cannot exceed 10000000 characters")
+        if not self.knowledge_storage_path.strip():
+            raise ValueError("knowledge storage path cannot be blank")
         if self.environment == "production":
             if not self.cookie_secure:
                 raise ValueError("FOUNDORA_COOKIE_SECURE must be true in production")

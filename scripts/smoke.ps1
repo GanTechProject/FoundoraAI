@@ -159,6 +159,7 @@ try {
             --publish "127.0.0.1:${authApiPort}:8000" `
             -e FOUNDORA_DATABASE_URL=$smokeDatabaseUrl `
             -e FOUNDORA_REDIS_URL=redis://redis:6379/1 `
+            -e FOUNDORA_KNOWLEDGE_STORAGE_PATH=/tmp/foundora-knowledge-$runId `
             -e FOUNDORA_PUBLIC_ORIGIN=$smokePublicOrigin api
     }
     Invoke-Checked {
@@ -170,7 +171,8 @@ try {
     Invoke-Checked {
         docker compose run --detach --no-deps --name $smokeWorkerContainer `
             -e FOUNDORA_DATABASE_URL=$smokeDatabaseUrl `
-            -e FOUNDORA_REDIS_URL=redis://redis:6379/1 worker
+            -e FOUNDORA_REDIS_URL=redis://redis:6379/1 `
+            -e FOUNDORA_KNOWLEDGE_STORAGE_PATH=/tmp/foundora-knowledge-$runId worker
     }
 
     Wait-ForHttp -Uri "$smokeApiOrigin/health/ready"
@@ -211,6 +213,12 @@ try {
     }
     Assert-HttpStatus -ExpectedStatus 401 -Request {
         Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/events"
+    }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/knowledge"
+    }
+    Assert-HttpStatus -ExpectedStatus 401 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri "$smokeApiOrigin/knowledge/search?q=evidence"
     }
 
     $rateLimitBody = @{ email = $rateLimitEmail; password = $smokePassword } | `
@@ -775,6 +783,111 @@ try {
         throw "Global kill switch did not release after the enforcement smoke"
     }
 
+    $knowledgeSource = Invoke-RestMethod -Uri "$smokeApiOrigin/knowledge/sources" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            title = "Beta founder research"
+            source_type = "upload"
+            source_uri = "https://example.com/beta-research"
+            metadata = @{ author = "Founder"; classification = "internal" }
+        } | ConvertTo-Json -Depth 4 -Compress)
+    $knowledgeSourceId = [string]$knowledgeSource.id
+    $knowledgeText = @"
+# Beta retention evidence
+
+Quasar retention research shows founder-led design studios prefer predictable annual subscriptions and transparent onboarding.
+"@
+    $knowledgeBytes = [Text.Encoding]::UTF8.GetBytes($knowledgeText)
+    $knowledgeUploadUri = "$smokeApiOrigin/knowledge/sources/$knowledgeSourceId/documents?filename=beta-evidence.md&file_media_type=text%2Fmarkdown"
+    $knowledgeDocument = Invoke-RestMethod -Uri $knowledgeUploadUri -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/octet-stream" -WebSession $ownerSession `
+        -Body $knowledgeBytes
+    $knowledgeDocumentId = [string]$knowledgeDocument.id
+    if ($knowledgeDocument.status -ne "indexed" -or `
+            $knowledgeDocument.chunk_count -lt 1 -or `
+            $knowledgeDocument.embedding_model -ne "foundora.local-feature-hash.v1") {
+        throw "Uploaded Phase 13 document was not extracted, embedded, and indexed"
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing -Uri $knowledgeUploadUri -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/octet-stream" -WebSession $ownerSession `
+            -Body $knowledgeBytes
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/knowledge/sources/$knowledgeSourceId/documents?filename=malformed.json&file_media_type=application%2Fjson" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/octet-stream" -WebSession $ownerSession `
+            -Body ([Text.Encoding]::UTF8.GetBytes('{"broken":'))
+    }
+    $knowledgeSearch = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/knowledge/search?q=quasar%20retention%20studios" `
+        -WebSession $ownerSession
+    $retrievedKnowledge = @($knowledgeSearch.hits | Where-Object {
+            $_.citation.document_id -eq $knowledgeDocumentId
+        }) | Select-Object -First 1
+    if (-not $retrievedKnowledge -or `
+            $retrievedKnowledge.citation.source_id -ne $knowledgeSourceId -or `
+            $retrievedKnowledge.citation.source_uri -ne "https://example.com/beta-research" -or `
+            -not ([string]$retrievedKnowledge.text).Contains("predictable annual subscriptions")) {
+        throw "Uploaded Phase 13 document was not retrievable with its source citation"
+    }
+    $knowledgeBrain = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/brain/context?purpose=planning&token_budget=4096&sources=knowledge&knowledge_query=quasar%20retention%20studios" `
+        -WebSession $ownerSession
+    if ($knowledgeBrain.business_id -ne $businessBId -or `
+            -not ([string]$knowledgeBrain.context).Contains("predictable annual subscriptions") -or `
+            -not ([string]$knowledgeBrain.context).Contains($knowledgeDocumentId)) {
+        throw "Cited Phase 13 retrieval did not enter selected-business context"
+    }
+
+    $invalidatedSource = Invoke-RestMethod -Uri "$smokeApiOrigin/knowledge/sources" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{
+            title = "Invalidation probe"
+            source_type = "upload"
+            source_uri = $null
+            metadata = @{}
+        } | ConvertTo-Json -Depth 3 -Compress)
+    $invalidatedSourceId = [string]$invalidatedSource.id
+    $invalidatedBytes = [Text.Encoding]::UTF8.GetBytes(
+        "Obsoleteorionmarker evidence must disappear from active retrieval."
+    )
+    $invalidatedDocument = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/knowledge/sources/$invalidatedSourceId/documents?filename=obsolete.txt&file_media_type=text%2Fplain" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/octet-stream" -WebSession $ownerSession `
+        -Body $invalidatedBytes
+    $invalidatedDocumentId = [string]$invalidatedDocument.id
+    Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/knowledge/documents/$invalidatedDocumentId/invalidate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ expected_revision = 1; reason = "Superseded evidence" } | ConvertTo-Json -Compress) | Out-Null
+    Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/knowledge/sources/$invalidatedSourceId/invalidate" `
+        -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ expected_revision = 1; reason = "Source retired" } | ConvertTo-Json -Compress) | Out-Null
+    $invalidatedSearch = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/knowledge/search?q=obsoleteorionmarker" `
+        -WebSession $ownerSession
+    if (@($invalidatedSearch.hits | Where-Object {
+                $_.citation.document_id -eq $invalidatedDocumentId
+            }).Count -ne 0) {
+        throw "Invalidated Phase 13 knowledge remained retrievable"
+    }
+
     Invoke-Checked {
         docker exec $smokeApiContainer python -m foundora.events.dispatcher --limit 1000
     }
@@ -786,19 +899,23 @@ try {
             "goal.created",
             "task.completed",
             "task.failed",
-            "approval.requested"
+            "approval.requested",
+            "knowledge.source_registered",
+            "knowledge.document_indexed",
+            "knowledge.document_invalidated",
+            "knowledge.source_invalidated"
         )) {
         if ($requiredEventType -notin $eventTypes) {
-            throw "Required Phase 12 event was not published: $requiredEventType"
+            throw "Required Phase 12/13 event was not published: $requiredEventType"
         }
     }
     $eventDeliveries = @($eventDashboard.events | ForEach-Object { $_.deliveries })
     if ($eventDashboard.business_id -ne $businessBId -or `
-            $eventDashboard.contracts.Count -ne 5 -or `
+            $eventDashboard.contracts.Count -ne 9 -or `
             @($eventDeliveries | Where-Object {
                 $_.status -ne "completed" -or $_.attempt_count -ne 1
             }).Count -ne 0) {
-        throw "Registered Phase 12 handlers did not complete exactly as designed"
+        throw "Registered Phase 12/13 handlers did not complete exactly as designed"
     }
     $deliveryAttemptsBefore = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -877,6 +994,26 @@ try {
             $alphaGovernance.actions.Count -ne 0 -or `
             $alphaGovernance.settings.autonomy_level -ne "OFF") {
         throw "Governance actions or selected-business controls crossed a business boundary"
+    }
+    $alphaKnowledge = Invoke-RestMethod -Uri "$smokeApiOrigin/knowledge" `
+        -WebSession $ownerSession
+    $alphaKnowledgeSearch = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/knowledge/search?q=quasar%20retention%20studios" `
+        -WebSession $ownerSession
+    if ($alphaKnowledge.business_id -ne $businessAId -or `
+            @($alphaKnowledge.sources | Where-Object { $_.id -eq $knowledgeSourceId }).Count -ne 0 -or `
+            @($alphaKnowledgeSearch.hits | Where-Object {
+                    $_.citation.document_id -eq $knowledgeDocumentId
+                }).Count -ne 0) {
+        throw "Knowledge sources or retrieval crossed the selected-business boundary"
+    }
+    Assert-HttpStatus -ExpectedStatus 404 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/knowledge/sources/$knowledgeSourceId/invalidate" `
+            -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ expected_revision = 1; reason = "Cross-business probe" } | ConvertTo-Json -Compress)
     }
     $alphaEvents = Invoke-RestMethod -Uri "$smokeApiOrigin/events" `
         -WebSession $ownerSession
@@ -1591,6 +1728,13 @@ try {
             -not $webEventsPage.Content.Contains("business.created")) {
         throw "Protected Phase 12 event ledger did not render real registered contracts"
     }
+    $webKnowledgePage = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/knowledge" -WebSession $ownerWebSession
+    if (-not $webKnowledgePage.Content.Contains("Retrievable evidence with durable citations") -or `
+            -not $webKnowledgePage.Content.Contains("Record provenance first") -or `
+            -not $webKnowledgePage.Content.Contains("Search active knowledge")) {
+        throw "Protected Phase 13 knowledge ingestion and retrieval UI did not render"
+    }
 
     $settingsPage = Invoke-WebRequest -UseBasicParsing `
         -Uri "$smokePublicOrigin/settings/security" -WebSession $ownerWebSession
@@ -1646,8 +1790,8 @@ try {
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_12") {
-        throw "Isolated event-bus migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_13") {
+        throw "Isolated knowledge-ingestion migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -1663,6 +1807,18 @@ try {
         -tAc "SELECT count(*) FROM business_goals g JOIN businesses b ON b.id = g.business_id WHERE (b.name = '$businessAName' AND g.title = 'Beta-only goal') OR (b.name = '$businessBName' AND g.title = 'Alpha-only goal')"
     if ($LASTEXITCODE -ne 0 -or $crossBusinessGoalCount.Trim() -ne "0") {
         throw "Goal persistence crossed a business boundary"
+    }
+    $knowledgeEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM knowledge_sources WHERE business_id = '$businessBId') || '|' || (SELECT count(*) FROM knowledge_documents WHERE id = '$knowledgeDocumentId' AND status = 'indexed' AND chunk_count > 0) || '|' || (SELECT count(*) FROM document_chunks WHERE document_id = '$knowledgeDocumentId' AND embedding_model = 'foundora.local-feature-hash.v1') || '|' || (SELECT count(*) FROM knowledge_sources WHERE id = '$invalidatedSourceId' AND status = 'invalidated') || '|' || (SELECT count(*) FROM knowledge_documents WHERE id = '$invalidatedDocumentId' AND status = 'invalidated')"
+    $knowledgeEvidenceParts = $knowledgeEvidence.Trim().Split("|")
+    if ($LASTEXITCODE -ne 0 -or $knowledgeEvidenceParts.Count -ne 5 -or `
+            [int]$knowledgeEvidenceParts[0] -ne 2 -or `
+            [int]$knowledgeEvidenceParts[1] -ne 1 -or `
+            [int]$knowledgeEvidenceParts[2] -lt 1 -or `
+            [int]$knowledgeEvidenceParts[3] -ne 1 -or `
+            [int]$knowledgeEvidenceParts[4] -ne 1) {
+        throw "Phase 13 source, document, chunk, embedding, or invalidation evidence is incorrect"
     }
     $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -1835,8 +1991,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_12") {
-    throw "Event-bus migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_13") {
+    throw "Knowledge-ingestion migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

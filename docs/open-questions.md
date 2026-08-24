@@ -7,11 +7,11 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 | Which founder-owned business will be the first real launch? | Required for Phase 61 | Keep the business registry and onboarding generic; do not seed demo assumptions |
 | Which production deployment target should be selected? | Phase 59 | Continue with provider-independent Linux containers and environment-based configuration |
 | Which search provider is preferred and what research budget is acceptable? | Phase 16 | No external research claims until a provider/tool is configured |
-| Which object-storage provider should back production assets? | Phase 13/26 and Phase 59 | Use an abstraction; local development storage only when explicitly labeled |
+| Which object-storage provider should back production assets? | Phase 26 and Phase 59 | Phase 13 established the abstraction and explicitly local development volume; production remains unselected |
 | Which preview/deployment and DNS providers are preferred? | Phase 24/25 | Local build/preview only; never claim deployment or DNS state |
 | Which email, social, advertising, analytics, CRM, and messaging providers are in scope? | Relevant provider phases | Planning/drafts only until adapter, credentials, permission, policy, and tests exist |
 | What provider-specific monetary limits apply? | Relevant provider phases | Phase 11 defaults to zero spend and exposes owner-set daily/per-action caps; R4 still requires explicit approval |
-| What retention, backup, privacy, and jurisdictional requirements apply to real business/customer data? | Before Phase 13 and Phase 33 | Minimize data, store provenance, exclude secrets, and avoid ingesting regulated data without a policy |
+| What retention, backup, privacy, and jurisdictional requirements apply to real business/customer data? | Before Phase 33/production | Minimize data, store provenance, exclude secrets, and avoid ingesting regulated data without a policy |
 | Which production domain and subdomain conventions should be used? | Phase 25/59 | None selected |
 
 ## Resolved in Phase 01
@@ -88,5 +88,14 @@ These questions do not block Phase 00. They are intentionally routed to the phas
 27. Phase 12 publishes only implemented business, goal, task, and approval events.
     Website, lead, campaign, and metric events remain unavailable until their
     owning domains exist; no fabricated future event is emitted.
+28. Phase 13 stores original development uploads behind a `KnowledgeStorage`
+    abstraction in an explicitly local Docker volume. No production object-store
+    provider is selected.
+29. Phase 13 uses a deterministic, versioned local feature-hash embedding and
+    database-native pgvector cosine search. It makes no model-provider call and
+    keeps the embedding adapter replaceable.
+30. Registered knowledge is evidence with source/document/chunk citations. It is
+    not automatically promoted to founder-approved fact or Phase 14 memory, and
+    invalidated evidence is excluded below the retrieval boundary.
 
 Other questions can remain open until their named phase.

@@ -17,7 +17,8 @@ CMD ["pytest"]
 
 FROM base AS runtime
 RUN groupadd --system --gid 10001 foundora && useradd --system --uid 10001 --gid foundora foundora \
-    && chown -R foundora:foundora /app
+    && mkdir -p /var/lib/foundora/knowledge \
+    && chown -R foundora:foundora /app /var/lib/foundora
 USER foundora
 EXPOSE 8000
 CMD ["uvicorn", "foundora.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -11,6 +11,7 @@ export const contextSourceTypes = [
   "operating_context",
   "operational_goals",
   "current_tasks",
+  "knowledge",
 ] as const;
 
 export type ContextSourceType = (typeof contextSourceTypes)[number];
@@ -93,6 +94,7 @@ export async function getBusinessContext(options: {
   purpose: string;
   tokenBudget: number;
   sourceTypes: ContextSourceType[];
+  knowledgeQuery?: string;
 }): Promise<BusinessContext | null> {
   const store = await cookies();
   const session = store.get("id")?.value;
@@ -102,6 +104,8 @@ export async function getBusinessContext(options: {
     token_budget: String(options.tokenBudget),
     sources: options.sourceTypes.join(","),
   });
+  if (options.knowledgeQuery)
+    query.set("knowledge_query", options.knowledgeQuery);
   try {
     const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
     const response = await fetch(`${base}/brain/context?${query}`, {

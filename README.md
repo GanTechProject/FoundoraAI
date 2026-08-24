@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, and the Phase 12 internal event bus.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, and Phase 13 provider-neutral knowledge ingestion and retrieval.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -34,6 +34,8 @@ Application dependencies are exactly pinned in `package-lock.json`, `apps/web/pa
 | argon2-cffi       |        25.1.0 |
 | HTTPX             |        0.28.1 |
 | jsonschema        |        4.26.0 |
+| pgvector (Python) |         0.5.0 |
+| pgvector (server) |         0.8.6 |
 
 Version selection was verified on 2026-08-22 against the official [Node.js release table](https://nodejs.org/en/about/previous-releases), [Python 3.13.15 release](https://www.python.org/downloads/release/python-31315/), [PostgreSQL version policy](https://www.postgresql.org/support/versioning/), [Redis 8.2 release notes](https://redis.io/docs/latest/operate/oss_and_stack/stack-with-enterprise/release-notes/redisce/redisos-8.2-release-notes/), and [Next.js release blog](https://nextjs.org/blog).
 
@@ -85,9 +87,10 @@ Open `/brain` for the selected business's unified context. The builder exposes a
 explicit purpose, token ceiling, and source selection, then shows every source's
 authority, version, validity, inclusion decision, and integrity fingerprint.
 Completed and cancelled goals cannot enter compiled context, onboarding drafts are
-never treated as approved facts, and future strategy, knowledge, task, customer,
-KPI, decision, and memory sources are shown as unavailable until their phases
-implement them.
+never treated as approved facts, and future strategy, customer, KPI, decision,
+and memory sources are shown as unavailable until their phases implement them.
+Knowledge enters context only through an explicit retrieval query and retains its
+source/document/chunk citation rather than becoming an approved fact.
 
 Open `/agents` to inspect the versioned agent and skill registries and execute the seeded
 read-only runtime verification agent. A run snapshots its selected-business input,
@@ -128,7 +131,14 @@ and approval mutations publish their implemented events in the same PostgreSQL
 transaction as domain state. The worker completes registered handlers atomically,
 retries failures with bounded backoff, and moves exhausted deliveries to a durable
 dead-letter state that the owner can explicitly redrive. Redis is not the durable
-event authority. The schema head is `20260825_12`.
+event authority.
+
+Open `/knowledge` to register selected-business source provenance, upload bounded
+UTF-8 text, Markdown, JSON, or CSV files, search indexed chunks, inspect exact
+citations, and invalidate a document or source. Original files use a local Docker
+volume behind a storage interface. Versioned local embeddings are searched in
+PostgreSQL through pgvector; Phase 13 makes no model-provider call and does not
+promote evidence into Phase 14 memory. The schema head is `20260825_13`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -148,7 +158,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, and event delivery/dead-letter smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 12 themselves make no provider call. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, and knowledge ingestion/retrieval smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 13 themselves make no provider call. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external
@@ -165,4 +175,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue and reconciles durable event deliveries directly from PostgreSQL. Business workspaces, onboarding drafts, founder-approved profiles, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, policy versions, governance controls, action approvals, audit evidence, domain events, consumer deliveries, and model usage are durable PostgreSQL records. Business-brain context remains derived from authoritative selected-business records. External provider tools and later operational domains remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue and reconciles durable event deliveries directly from PostgreSQL. Business workspaces, onboarding drafts, founder-approved profiles, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, policy versions, governance controls, action approvals, audit evidence, domain events, consumer deliveries, knowledge sources/documents/chunks/vectors, and model usage are durable PostgreSQL records. Original knowledge files use the configured storage abstraction. Business-brain context remains derived from authoritative selected-business records and explicitly retrieved cited knowledge. External provider tools and later operational domains remain deferred to their authorized phases.

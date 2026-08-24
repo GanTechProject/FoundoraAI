@@ -83,6 +83,9 @@ export default async function GovernancePage({
           <Link className="text-link" href="/events">
             Event bus
           </Link>
+          <Link className="text-link" href="/knowledge">
+            Knowledge
+          </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
               Sign out

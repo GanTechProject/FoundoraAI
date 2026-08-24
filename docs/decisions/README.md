@@ -19,5 +19,6 @@
 | [ADR-0015](ADR-0015-versioned-durable-workflow-coordinator.md) | Version-pinned durable workflow coordination | Accepted |
 | [ADR-0016](ADR-0016-execution-time-governance.md) | Execution-time governance with immutable policy evidence | Accepted |
 | [ADR-0017](ADR-0017-transactional-domain-event-delivery.md) | Transactional domain events with idempotent durable delivery | Accepted |
+| [ADR-0018](ADR-0018-provider-neutral-knowledge-retrieval.md) | Provider-neutral knowledge ingestion and pgvector retrieval | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

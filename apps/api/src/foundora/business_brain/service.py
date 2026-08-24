@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from foundora.auth.service import AuthContext
 from foundora.business.context import NoSelectedBusiness, resolve_selected_business
 from foundora.infrastructure.database import get_session_factory
+from foundora.knowledge.embeddings import LocalFeatureHashEmbedding
+from foundora.knowledge.service import KnowledgeSearchHit, search_knowledge
 from foundora.models import (
     ApprovedBusinessProfile,
     BusinessGoal,
@@ -30,6 +32,7 @@ SourceType = Literal[
     "operating_context",
     "operational_goals",
     "current_tasks",
+    "knowledge",
 ]
 SourceValidity = Literal["current", "stale", "invalidated"]
 SelectionStatus = Literal["included", "excluded"]
@@ -44,13 +47,13 @@ SOURCE_TYPES: tuple[SourceType, ...] = (
     "operating_context",
     "operational_goals",
     "current_tasks",
+    "knowledge",
 )
 
 FUTURE_SOURCE_TYPES: dict[str, str] = {
     "approved_strategy": "No approved strategy domain exists before Phase 17.",
     "customers": "No customer domain exists before Phase 33.",
     "decisions": "No governed decision domain exists yet.",
-    "knowledge": "No knowledge ingestion domain exists before Phase 13.",
     "kpis": "No KPI domain exists before Phase 40.",
     "relevant_memories": "No memory system exists before Phase 14.",
 }
@@ -61,6 +64,7 @@ class ContextBuildRequest:
     purpose: str
     token_budget: int
     selected_source_types: frozenset[SourceType]
+    knowledge_query: str | None = None
 
 
 @dataclass(frozen=True)
@@ -209,6 +213,7 @@ def select_context(
                 "purpose": request.purpose,
                 "token_budget": request.token_budget,
                 "selected_source_types": sorted(request.selected_source_types),
+                "knowledge_query": request.knowledge_query,
                 "sources": source_fingerprint,
             }
         ).encode("utf-8")
@@ -274,6 +279,18 @@ class ContextService:
                 if task_ids
                 else []
             )
+            knowledge_hits = (
+                await search_knowledge(
+                    database,
+                    business_id=business.id,
+                    query=request.knowledge_query,
+                    embedding=LocalFeatureHashEmbedding(),
+                    limit=5,
+                    minimum_score=0.05,
+                )
+                if "knowledge" in request.selected_source_types and request.knowledge_query
+                else []
+            )
 
         candidates = [
             ContextCandidate(
@@ -327,12 +344,50 @@ class ContextService:
         candidates.extend(self._task_candidates(tasks, dependencies_by_task))
         if not tasks:
             unavailable["current_tasks"] = "No tasks are recorded."
+        candidates.extend(self._knowledge_candidates(knowledge_hits))
+        if "knowledge" in request.selected_source_types and not request.knowledge_query:
+            unavailable["knowledge"] = "Knowledge context requires an explicit retrieval query."
+        elif request.knowledge_query and not knowledge_hits:
+            unavailable["knowledge"] = "No active knowledge chunk matched the retrieval query."
         return select_context(
             business_id=business.id,
             request=request,
             candidates=candidates,
             unavailable_sources=unavailable,
         )
+
+    @staticmethod
+    def _knowledge_candidates(hits: list[KnowledgeSearchHit]) -> list[ContextCandidate]:
+        return [
+            ContextCandidate(
+                source_type="knowledge",
+                source_reference=(
+                    f"knowledge_sources/{hit.citation.source_id}/documents/"
+                    f"{hit.citation.document_id}/chunks/{hit.citation.chunk_id}"
+                ),
+                source_version=hit.citation.document_content_sha256,
+                authority="founder_registered_knowledge",
+                label=f"{hit.citation.source_title} — {hit.citation.filename}",
+                updated_at=hit.citation.document_created_at,
+                validity="current",
+                content={
+                    "text": hit.text,
+                    "similarity": hit.score,
+                    "citation": {
+                        "source_id": str(hit.citation.source_id),
+                        "source_uri": hit.citation.source_uri,
+                        "document_id": str(hit.citation.document_id),
+                        "filename": hit.citation.filename,
+                        "chunk_id": str(hit.citation.chunk_id),
+                        "chunk_ordinal": hit.citation.chunk_ordinal,
+                        "start_character": hit.citation.start_character,
+                        "end_character": hit.citation.end_character,
+                        "content_sha256": hit.citation.content_sha256,
+                    },
+                },
+            )
+            for hit in hits
+        ]
 
     @staticmethod
     def _approved_candidates(

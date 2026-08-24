@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The implementation through Phase 12 is a portable modular monorepo:
+The implementation through Phase 13 is a portable modular monorepo:
 
 - `apps/web`: a standalone-output Next.js process with owner authentication, security settings, and the server-rendered business workspace;
 - `apps/api`: a FastAPI process with PostgreSQL and Redis readiness probes, correlation IDs, and structured JSON logging;
@@ -30,6 +30,9 @@ The implementation through Phase 12 is a portable modular monorepo:
 - a transactional internal event bus with code-reviewed versioned contracts,
   immutable business-scoped envelopes, per-consumer delivery state, atomic
   handler completion, bounded retry, durable dead letters, and explicit redrive;
+- a provider-neutral knowledge ingestion domain with source provenance, bounded
+  local object storage, explicit text extraction, immutable chunks, versioned
+  local embeddings, pgvector HNSW cosine retrieval, citations, and invalidation;
 - `compose.yaml`: health-gated PostgreSQL, Redis, migration, API, worker, and web services;
 - `scripts/`: containerized quality and smoke gates used locally and by CI.
 
@@ -66,7 +69,7 @@ Founder
 9. **Real-state UI.** Empty future sections stay hidden behind implementation-backed feature flags. The UI never fabricates connected, published, deployed, paid, running, or completed states.
 10. **Incremental schema.** Database tables and provider interfaces are introduced only in their authorized phase; Phase 01 must not create the entire future domain model.
 
-## Implemented foundation through Phase 12
+## Implemented foundation through Phase 13
 
 The verified baseline is:
 
@@ -140,6 +143,10 @@ The verified baseline is:
   delivery marker commit together, completed deliveries do not replay, failed
   attempts use bounded exponential backoff, and exhaustion creates an inspectable
   dead letter that can be redriven with optimistic state protection;
+- selected-business knowledge sources and uploaded documents with original-file
+  storage behind an adapter, UTF-8 extraction and chunk offsets, SHA-256 evidence,
+  deterministic 256-dimensional local embeddings, PostgreSQL pgvector HNSW
+  retrieval, citation-preserving results, and optimistic invalidation;
 
 Exact runtime, framework, library, and container versions are recorded in the root `README.md`, lock files, manifests, Dockerfiles, and Compose file. Phase evidence is recorded in the corresponding `docs/phase-*.md` files.
 
@@ -175,6 +182,9 @@ Dependencies should point inward toward domain contracts. Provider SDK types, OR
 - Domain events are committed with their aggregate mutation; every registered
   consumer has one durable delivery row, and Redis loss cannot erase an event or
   its retry/dead-letter state.
+- Knowledge retrieval is selected-business scoped below the query, uses only
+  active sources and indexed documents, and never returns an uncited chunk or
+  invalidated evidence.
 - One action must ultimately be traceable from UI request through task, agent, skill, tool/provider, and result.
 - Tests must include timeouts, retries, duplicates, partial workflow failure, worker interruption, and approval bypass attempts as the relevant phases arrive.
 

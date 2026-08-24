@@ -125,6 +125,29 @@ export async function authenticatedApiRequest(
   });
 }
 
+export async function authenticatedApiUpload(
+  path: string,
+  body: ArrayBuffer,
+): Promise<Response> {
+  const store = await cookies();
+  const session = store.get(sessionCookieName)?.value;
+  const csrf = store.get(csrfCookieName)?.value;
+  const headers = new Headers({
+    Accept: "application/json",
+    "Content-Type": "application/octet-stream",
+    Origin: publicOrigin(),
+    "X-CSRF-Token": csrf ?? "",
+  });
+  if (session) headers.set("Cookie", `${sessionCookieName}=${session}`);
+  return fetch(apiUrl(path), {
+    method: "POST",
+    cache: "no-store",
+    headers,
+    body,
+    signal: AbortSignal.timeout(15000),
+  });
+}
+
 export async function loginApiRequest(
   email: string,
   password: string,

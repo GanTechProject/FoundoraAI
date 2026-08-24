@@ -21,6 +21,7 @@ const sourceLabels: Record<ContextSourceType, string> = {
   operating_context: "Assets / constraints",
   operational_goals: "Operational goals",
   current_tasks: "Current tasks",
+  knowledge: "Retrieved knowledge",
 };
 
 function selectedSources(value: string | string[] | undefined) {
@@ -59,6 +60,7 @@ export default async function BusinessBrainPage({
     purpose?: string;
     token_budget?: string;
     sources?: string | string[];
+    knowledge_query?: string;
   }>;
 }) {
   const auth = await getAuthSession();
@@ -69,10 +71,12 @@ export default async function BusinessBrainPage({
   const sources = selectedSources(params.sources);
   const budget = tokenBudget(params.token_budget);
   const selectedPurpose = purpose(params.purpose);
+  const knowledgeQuery = params.knowledge_query?.trim().slice(0, 500) ?? "";
   const brain = await getBusinessContext({
     purpose: selectedPurpose,
     tokenBudget: budget,
     sourceTypes: sources,
+    knowledgeQuery,
   });
   const included =
     brain?.sources.filter((source) => source.selection_status === "included") ??
@@ -114,6 +118,9 @@ export default async function BusinessBrainPage({
           </Link>
           <Link className="text-link" href="/events">
             Events
+          </Link>
+          <Link className="text-link" href="/knowledge">
+            Knowledge
           </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
@@ -174,6 +181,16 @@ export default async function BusinessBrainPage({
               ))}
             </div>
           </fieldset>
+          <div>
+            <label htmlFor="knowledge-query">Knowledge retrieval query</label>
+            <input
+              id="knowledge-query"
+              name="knowledge_query"
+              defaultValue={knowledgeQuery}
+              maxLength={500}
+              placeholder="Required only when retrieved knowledge is selected"
+            />
+          </div>
           <button type="submit">Rebuild context</button>
         </form>
         <p className="fine-print">

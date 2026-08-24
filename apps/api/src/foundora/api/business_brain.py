@@ -110,6 +110,7 @@ async def build_context(
     purpose: Annotated[str, Query(min_length=1, max_length=80)] = "general",
     token_budget: Annotated[int, Query(ge=256, le=32_768)] = 4096,
     sources: Annotated[str | None, Query(max_length=512)] = None,
+    knowledge_query: Annotated[str | None, Query(min_length=1, max_length=500)] = None,
 ) -> BusinessContextView:
     normalized_purpose = purpose.strip().lower()
     if _PURPOSE_PATTERN.fullmatch(normalized_purpose) is None:
@@ -126,6 +127,7 @@ async def build_context(
             purpose=normalized_purpose,
             token_budget=token_budget,
             selected_source_types=_source_types(sources),
+            knowledge_query=knowledge_query.strip() if knowledge_query else None,
         ),
     )
     response.headers["Cache-Control"] = "no-store"
