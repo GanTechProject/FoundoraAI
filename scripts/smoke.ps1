@@ -539,7 +539,7 @@ try {
             $governanceDashboard.settings.autonomy_level -ne "OFF" -or `
             $governanceDashboard.settings.daily_spend_limit_microusd -ne 0 -or `
             $governanceDashboard.controls.kill_switch_enabled -or `
-            $governanceDashboard.tool_permissions.Count -ne 3) {
+            $governanceDashboard.tool_permissions.Count -ne 7) {
         throw "Default Phase 11 policy and least-authority controls are incorrect"
     }
 
@@ -1088,7 +1088,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
     }
     $eventDeliveries = @($eventDashboard.events | ForEach-Object { $_.deliveries })
     if ($eventDashboard.business_id -ne $businessBId -or `
-            $eventDashboard.contracts.Count -ne 17 -or `
+            $eventDashboard.contracts.Count -ne 18 -or `
             @($eventDeliveries | Where-Object {
                 $_.status -ne "completed" -or $_.attempt_count -ne 1
             }).Count -ne 0) {
@@ -1955,6 +1955,130 @@ Quasar retention research shows founder-led design studios prefer predictable an
     }
     Write-Output "Phase 20 website specification and no-code boundary smoke passed"
 
+    # Phase 21 adds one bounded R1 coding agent and an assigned build skill.
+    # The model proposes changes; controlled tools alone compute successful build evidence.
+    $phase21Agent = $phase16Dashboard.definitions | Where-Object {
+        $_.agent_id -eq "website-coding"
+    } | Select-Object -First 1
+    $phase21Skill = $phase16Dashboard.skills | Where-Object {
+        $_.skill_id -eq "website-build"
+    } | Select-Object -First 1
+    $phase21Tools = @(
+        "foundora.repository.website",
+        "foundora.filesystem.website",
+        "foundora.dependencies.website",
+        "foundora.checks.website"
+    )
+    $phase21RequiredOutput = @(
+        "project_operation",
+        "website_specification_id",
+        "website_specification_version",
+        "dependency_manifest",
+        "changes",
+        "implementation_trace",
+        "test_cases"
+    )
+    if (-not $phase21Agent -or `
+            $phase21Agent.version -ne 1 -or `
+            $phase21Agent.risk_level -ne "R1" -or `
+            $phase21Agent.maximum_autonomy -ne "manual_internal_execution" -or `
+            @($phase21Agent.allowed_skills).Count -ne 1 -or `
+            $phase21Agent.allowed_skills[0] -ne "website-build" -or `
+            (@($phase21Agent.allowed_tools) -join "|") -ne ($phase21Tools -join "|") -or `
+            $phase21Agent.data_access_scope.repository -ne "controlled_tool_only" -or `
+            $phase21Agent.data_access_scope.filesystem -ne `
+                "controlled_temporary_tree_only" -or `
+            $phase21Agent.data_access_scope.generated_process_execution -ne `
+                "forbidden_until_phase_22" -or `
+            @($phase21Agent.input_schema.required) -notcontains `
+                "website_coding_evidence" -or `
+            -not $phase21Skill -or `
+            $phase21Skill.version -ne 1 -or `
+            $phase21Skill.risk_class -ne "R1" -or `
+            (@($phase21Skill.tool_requirements) -join "|") -ne `
+                ($phase21Tools -join "|") -or `
+            (@($phase21Skill.permissions) -join "|") -ne ($phase21Tools -join "|")) {
+        throw "Phase 21 Website/Coding Agent can exceed its controlled-tool boundary"
+    }
+    foreach ($field in $phase21RequiredOutput) {
+        if (@($phase21Agent.output_schema.required) -notcontains $field) {
+            throw "Phase 21 website coding schema is missing $field"
+        }
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/website-projects/runs" -Method Post `
+            -Headers @{
+                Origin = $smokePublicOrigin
+                "X-CSRF-Token" = $csrfCookie.Value
+            } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                    objective = "Generate only from an exact approved specification"
+                    operation = "generate"
+                    base_project_version = $null
+                } | ConvertTo-Json -Compress)
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/website-projects/runs" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                    objective = "This request must stop before coding"
+                    operation = "generate"
+                    base_project_version = $null
+                } | ConvertTo-Json -Compress)
+    }
+    $phase21Dashboard = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/website-projects" -WebSession $ownerSession
+    if ($phase21Dashboard.current_specification -or `
+            $phase21Dashboard.current_project -or `
+            $phase21Dashboard.next_operation -or `
+            @($phase21Dashboard.history).Count -ne 0 -or `
+            @($phase21Dashboard.recent_runs).Count -ne 0 -or `
+            [string]::IsNullOrWhiteSpace($phase21Dashboard.blocker)) {
+        throw "Phase 21 project domain did not fail closed without an approved specification"
+    }
+    $phase21Page = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/website-projects" -WebSession $phase15WebSession
+    if (-not $phase21Page.Content.Contains("Controlled source changes, computed build truth") -or `
+            -not $phase21Page.Content.Contains("Not built yet")) {
+        throw "Phase 21 protected website project UI did not render"
+    }
+
+    $phase21BuilderProbe = @'
+from foundora.website_projects.tools import ControlledWebsiteBuilder
+
+html = """<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Probe</title><meta name="description" content="Controlled build probe."></head><body><main><h1 id="probe">Controlled build</h1></main></body></html>"""
+structured_input = {
+    "website_coding_evidence": {
+        "approved_website_specification": {"sitemap": [{"path": "/"}]}
+    }
+}
+output = {
+    "dependency_manifest": {"manager": "none", "dependencies": []},
+    "changes": [{
+        "operation": "add",
+        "path": "index.html",
+        "media_type": "text/html",
+        "content": html,
+    }],
+    "test_cases": [{
+        "page_path": "/",
+        "assertions": [{"kind": "element_id", "value": "probe"}],
+    }],
+}
+artifact = ControlledWebsiteBuilder().build(structured_input, output)
+print(f"{artifact.build_report['status']}|{artifact.check_report['status']}|{len(artifact.build_digest)}")
+'@
+    $phase21BuilderEvidence = $phase21BuilderProbe | `
+        docker exec -i $smokeApiContainer python -
+    if ($LASTEXITCODE -ne 0 -or $phase21BuilderEvidence.Trim() -ne "passed|passed|64") {
+        throw "Phase 21 controlled builder did not compute a successful real artifact"
+    }
+    Write-Output "Phase 21 controlled website build and no-fake-success smoke passed"
+
     $gatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
         -WebSession $ownerSession
     $openAiStatus = $gatewayDashboard.providers | `
@@ -2082,7 +2206,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
         $_.agent_id -eq "chief-of-staff-planning"
     } | Select-Object -First 1
     if ($agentDashboard.business_id -ne $businessBId -or `
-            $agentDashboard.definitions.Count -ne 10 -or `
+            $agentDashboard.definitions.Count -ne 11 -or `
             -not $verificationAgent -or `
             $verificationAgent.version -ne 2 -or `
             $verificationAgent.risk_level -ne "R0" -or `
@@ -2119,7 +2243,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
     $summarySkill = $agentDashboard.skills | Where-Object {
         $_.skill_id -eq "summarize-business-context"
     } | Select-Object -First 1
-    if (@($agentDashboard.skills).Count -ne 3 -or `
+    if (@($agentDashboard.skills).Count -ne 4 -or `
             -not $summarySkill -or `
             $summarySkill.risk_class -ne "R0" -or `
             @($summarySkill.tool_requirements).Count -ne 0 -or `
@@ -2443,8 +2567,8 @@ Quasar retention research shows founder-led design studios prefer predictable an
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_20") {
-        throw "Isolated website-specification migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_21") {
+        throw "Isolated website-coding migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -2514,6 +2638,12 @@ Quasar retention research shows founder-led design studios prefer predictable an
         "SELECT (SELECT count(*) FROM agents WHERE id = 'website-specification' AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id = 'website-specification' AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0 AND data_access_scope->>'approved_strategy' = 'required_exact_current_version' AND data_access_scope->>'approved_product_offer' = 'required_exact_active_version' AND data_access_scope->>'approved_brand' = 'required_exact_active_version' AND data_access_scope->>'repository' = 'forbidden' AND data_access_scope->>'filesystem' = 'forbidden') || '|' || (SELECT count(*) FROM website_specification_versions)"
     if ($LASTEXITCODE -ne 0 -or $websiteSpecificationEvidence.Trim() -ne "1|1|0") {
         throw "Phase 20 Website Specification agent or approval-domain evidence is incorrect"
+    }
+    $websiteProjectEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM agents WHERE id = 'website-coding' AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM skills WHERE id = 'website-build' AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id = 'website-coding' AND risk_level = 'R1' AND maximum_autonomy = 'manual_internal_execution' AND json_array_length(allowed_tools) = 4 AND json_array_length(allowed_skills) = 1 AND data_access_scope->>'repository' = 'controlled_tool_only' AND data_access_scope->>'generated_process_execution' = 'forbidden_until_phase_22') || '|' || (SELECT count(*) FROM website_project_versions)"
+    if ($LASTEXITCODE -ne 0 -or $websiteProjectEvidence.Trim() -ne "1|1|1|0") {
+        throw "Phase 21 controlled website agent, skill, or project evidence is incorrect"
     }
     $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -2605,7 +2735,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
     $skillContractEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
         "SELECT (SELECT count(*) FROM skills) || '|' || (SELECT count(*) FROM skill_versions) || '|' || (SELECT count(*) FROM agent_skill_assignments)"
-    if ($LASTEXITCODE -ne 0 -or $skillContractEvidence.Trim() -ne "3|3|1") {
+    if ($LASTEXITCODE -ne 0 -or $skillContractEvidence.Trim() -ne "4|4|2") {
         throw "Skill registry or exact-version assignment evidence is incorrect"
     }
     $skillRunEvidence = docker compose exec -T postgres psql -U foundora `
@@ -2693,8 +2823,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_20") {
-    throw "Website-specification migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_21") {
+    throw "Website-coding migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

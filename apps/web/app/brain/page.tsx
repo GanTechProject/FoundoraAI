@@ -18,11 +18,14 @@ const sourceLabels: Record<ContextSourceType, string> = {
   approved_goals: "Approved strategic goals",
   products_services: "Products / services",
   brand: "Brand",
+  website_specification: "Approved website specification",
+  website_project: "Verified website project",
   operating_context: "Assets / constraints",
   operational_goals: "Operational goals",
   current_tasks: "Current tasks",
   knowledge: "Retrieved knowledge",
   relevant_memories: "Relevant curated memories",
+  approved_strategy: "Approved business strategy",
 };
 
 function selectedSources(value: string | string[] | undefined) {

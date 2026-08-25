@@ -80,7 +80,10 @@ export default async function AgentsPage({
             aligned approved strategy and offer into reusable proposed brand
             rules with no publishing authority. The Website Specification Agent
             turns those aligned approvals into a complete founder-reviewable
-            blueprint while code generation remains explicitly not started.
+            blueprint while code generation remains explicitly not started. The
+            Website/Coding Agent is the first bounded R1 capability: it can
+            propose source changes only through its assigned controlled build
+            skill, while the runtime computes all build and check evidence.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -101,6 +104,9 @@ export default async function AgentsPage({
           </Link>
           <Link className="text-link" href="/website-specifications">
             Website specification
+          </Link>
+          <Link className="text-link" href="/website-projects">
+            Website projects
           </Link>
           <Link className="text-link" href="/tasks">
             Task engine
@@ -229,7 +235,9 @@ export default async function AgentsPage({
                     {definition.agent_id === "founder-ceo" ||
                     definition.agent_id === "chief-of-staff-planning"
                       ? "Founder objective for advisory planning"
-                      : "Read-only objective"}
+                      : definition.agent_id === "website-coding"
+                        ? "Founder implementation objective"
+                        : "Read-only objective"}
                   </label>
                   <textarea
                     id={`objective-${definition.agent_id}`}
@@ -239,7 +247,9 @@ export default async function AgentsPage({
                         ? "Review the current business state and propose the most important grounded priorities and specialist work."
                         : definition.agent_id === "chief-of-staff-planning"
                           ? "Turn the current objective and business state into a proposed, dependency-aware plan."
-                          : "Inspect the selected business context and identify its most important grounded observation."
+                          : definition.agent_id === "website-coding"
+                            ? "Generate the complete provider-neutral website from the current approved specification and satisfy every controlled check."
+                            : "Inspect the selected business context and identify its most important grounded observation."
                     }
                     minLength={1}
                     maxLength={500}
@@ -338,11 +348,17 @@ export default async function AgentsPage({
                   <textarea
                     id={`skill-input-${definition.agent_id}`}
                     name="skill_input"
-                    defaultValue={'{"focus":"most important business context"}'}
+                    defaultValue={
+                      definition.agent_id === "website-coding"
+                        ? '{"operation":"generate"}'
+                        : '{"focus":"most important business context"}'
+                    }
                     rows={3}
                   />
                   <button type="submit" disabled={!definition.enabled}>
-                    Queue manual R0 advisory run
+                    {definition.agent_id === "website-coding"
+                      ? "Queue manual R1 controlled run"
+                      : "Queue manual R0 advisory run"}
                   </button>
                 </form>
               </article>

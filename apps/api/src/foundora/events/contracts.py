@@ -225,6 +225,48 @@ EVENT_CONTRACTS: Mapping[str, EventContract] = MappingProxyType(
                 ],
             ),
         ),
+        "website_project.built": EventContract(
+            event_type="website_project.built",
+            schema_version=1,
+            aggregate_type="website_project",
+            description=(
+                "A controlled website source tree was materialized and every required check passed."
+            ),
+            payload_schema=_schema(
+                {
+                    "business_id": {"type": "string", "format": "uuid"},
+                    "website_project_id": {"type": "string", "format": "uuid"},
+                    "website_project_version": {"type": "integer", "minimum": 1},
+                    "operation": {"enum": ["generate", "modify"]},
+                    "source_agent_run_id": {"type": "string", "format": "uuid"},
+                    "source_website_specification_id": {
+                        "type": "string",
+                        "format": "uuid",
+                    },
+                    "source_website_specification_version": {
+                        "type": "integer",
+                        "minimum": 1,
+                    },
+                    "source_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                    "build_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                    "build_status": {"const": "passed"},
+                    "check_status": {"const": "passed"},
+                },
+                [
+                    "business_id",
+                    "website_project_id",
+                    "website_project_version",
+                    "operation",
+                    "source_agent_run_id",
+                    "source_website_specification_id",
+                    "source_website_specification_version",
+                    "source_digest",
+                    "build_digest",
+                    "build_status",
+                    "check_status",
+                ],
+            ),
+        ),
         "knowledge.source_registered": EventContract(
             event_type="knowledge.source_registered",
             schema_version=1,

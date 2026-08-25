@@ -26,5 +26,6 @@
 | [ADR-0022](ADR-0022-immutable-founder-approved-product-offers.md)   | Immutable, founder-approved product and offer portfolio versions          | Accepted |
 | [ADR-0023](ADR-0023-founder-approved-evidence-linked-brand-system.md) | Founder-approved, evidence-linked brand system                          | Accepted |
 | [ADR-0024](ADR-0024-specification-before-code-generation.md)        | Founder-approved website specification before code generation             | Accepted |
+| [ADR-0025](ADR-0025-controlled-declarative-website-builds.md)       | Controlled declarative website builds before sandbox execution            | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

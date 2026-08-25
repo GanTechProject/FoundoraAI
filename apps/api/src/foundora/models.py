@@ -332,6 +332,55 @@ class WebsiteSpecificationVersion(Base):
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class WebsiteProjectVersion(Base):
+    __tablename__ = "website_project_versions"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_website_project_versions_version"),
+        CheckConstraint(
+            "status IN ('active', 'superseded')",
+            name="ck_website_project_versions_status",
+        ),
+        CheckConstraint(
+            "operation IN ('generate', 'modify')",
+            name="ck_website_project_versions_operation",
+        ),
+        UniqueConstraint(
+            "business_id", "version", name="uq_website_project_versions_business_version"
+        ),
+        UniqueConstraint("source_agent_run_id", name="uq_website_project_versions_source_run"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    operation: Mapped[str] = mapped_column(String(16))
+    source_agent_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="RESTRICT")
+    )
+    source_website_specification_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("website_specification_versions.id", ondelete="RESTRICT")
+    )
+    source_website_specification_version: Mapped[int] = mapped_column(Integer)
+    base_project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("website_project_versions.id", ondelete="RESTRICT"), nullable=True
+    )
+    base_project_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    context_id: Mapped[str] = mapped_column(String(64))
+    source_files: Mapped[list[dict[str, object]]] = mapped_column(JSON)
+    dependency_manifest: Mapped[dict[str, object]] = mapped_column(JSON)
+    source_digest: Mapped[str] = mapped_column(String(64))
+    build_digest: Mapped[str] = mapped_column(String(64))
+    build_manifest: Mapped[list[dict[str, object]]] = mapped_column(JSON)
+    build_report: Mapped[dict[str, object]] = mapped_column(JSON)
+    check_report: Mapped[dict[str, object]] = mapped_column(JSON)
+    tool_audit: Mapped[list[dict[str, object]]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Agent(Base):
     __tablename__ = "agents"
     __table_args__ = (CheckConstraint("current_version > 0", name="ck_agents_current_version"),)

@@ -27,6 +27,7 @@ from foundora.models import (
     ProductOfferVersion,
     Task,
     TaskDependency,
+    WebsiteProjectVersion,
     WebsiteSpecificationVersion,
 )
 
@@ -37,6 +38,7 @@ SourceType = Literal[
     "products_services",
     "brand",
     "website_specification",
+    "website_project",
     "operating_context",
     "operational_goals",
     "current_tasks",
@@ -55,6 +57,7 @@ SOURCE_TYPES: tuple[SourceType, ...] = (
     "products_services",
     "brand",
     "website_specification",
+    "website_project",
     "operating_context",
     "operational_goals",
     "current_tasks",
@@ -281,6 +284,12 @@ class ContextService:
                     WebsiteSpecificationVersion.status == "active",
                 )
             )
+            active_website_project = await database.scalar(
+                select(WebsiteProjectVersion).where(
+                    WebsiteProjectVersion.business_id == business.id,
+                    WebsiteProjectVersion.status == "active",
+                )
+            )
             goals = list(
                 await database.scalars(
                     select(BusinessGoal)
@@ -428,6 +437,26 @@ class ContextService:
                     validity="current" if specification_aligned else "stale",
                 )
             )
+        if active_website_project is None:
+            unavailable["website_project"] = (
+                "No controlled website project has completed every build check."
+            )
+        else:
+            project_aligned = (
+                approved_website_specification is not None
+                and active_website_project.source_website_specification_id
+                == approved_website_specification.id
+                and active_website_project.source_website_specification_version
+                == approved_website_specification.version
+                and active_website_project.build_report.get("status") == "passed"
+                and active_website_project.check_report.get("status") == "passed"
+            )
+            candidates.append(
+                self._website_project_candidate(
+                    active_website_project,
+                    validity="current" if project_aligned else "stale",
+                )
+            )
         candidates.extend(self._goal_candidates(goals))
         if not goals:
             unavailable["operational_goals"] = "No business goals are recorded."
@@ -556,6 +585,40 @@ class ContextService:
                     "code_generation_status", "not_started"
                 ),
                 "evidence_refs": specification.evidence_refs,
+            },
+        )
+
+    @staticmethod
+    def _website_project_candidate(
+        project: WebsiteProjectVersion,
+        *,
+        validity: SourceValidity = "current",
+    ) -> ContextCandidate:
+        return ContextCandidate(
+            source_type="website_project",
+            source_reference=f"website_project_versions/{project.id}",
+            source_version=str(project.version),
+            authority="controlled_verified_website_build",
+            label=f"Controlled website project v{project.version}",
+            updated_at=project.created_at,
+            validity=validity,
+            content={
+                "website_project_id": str(project.id),
+                "status": project.status,
+                "operation": project.operation,
+                "source_agent_run_id": str(project.source_agent_run_id),
+                "source_website_specification_id": str(project.source_website_specification_id),
+                "source_website_specification_version": (
+                    project.source_website_specification_version
+                ),
+                "source_digest": project.source_digest,
+                "build_digest": project.build_digest,
+                "build_report": project.build_report,
+                "check_report": project.check_report,
+                "dependency_manifest": project.dependency_manifest,
+                "source_file_count": len(project.source_files),
+                "build_file_count": len(project.build_manifest),
+                "deployment_status": "not_started",
             },
         )
 

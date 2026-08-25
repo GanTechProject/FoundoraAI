@@ -431,6 +431,28 @@ export async function approveWebsiteSpecification(
   redirect("/website-specifications?updated=approved");
 }
 
+export async function startWebsiteProject(formData: FormData): Promise<never> {
+  const baseProjectVersion = field(formData, "base_project_version");
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest("/website-projects/runs", {
+      objective: field(formData, "objective"),
+      operation: field(formData, "operation"),
+      base_project_version: baseProjectVersion
+        ? Number(baseProjectVersion)
+        : null,
+    });
+  } catch {
+    redirect("/website-projects?error=unavailable");
+  }
+  if (!response.ok) {
+    redirect(
+      `/website-projects?error=${response.status === 422 ? "invalid" : "unavailable"}`,
+    );
+  }
+  redirect("/website-projects?updated=queued");
+}
+
 function taskError(response: Response): string {
   if (response.status === 404) return "not-found";
   if (response.status === 409) return "conflict";

@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, executive planning, source-backed research agents, founder-approved evidence-linked business strategy, and immutable founder-approved product and offer portfolios.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, executive planning, source-backed research agents, founder-approved strategy, product/offer, brand, and website-specification data, plus controlled website project generation and modification.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -214,7 +214,20 @@ technical requirements. Every artifact cites all three immutable sources. Open
 an immutable active specification, publishes `website_specification.approved`, and
 exposes the specification through the Business Brain for a future coding agent. The
 contract has no tools or repository/filesystem access, and code generation remains
-explicitly `not_started`. The schema head is `20260825_20`.
+explicitly `not_started` until the next explicit coding run.
+
+The registry also includes `website-coding@1` with its exact assigned
+`website-build@1` skill. Open `/website-projects` to generate from the current approved
+specification or modify the exact current project version. The model returns only a
+declarative source-change set, complete specification trace, dependency manifest, and
+page tests. Four code-reviewed internal tools validate relative paths, apply the change
+set to a temporary source tree, enforce the reviewed dependency-free profile, materialize
+the build tree, and compute tests, lint, accessibility, technical SEO, performance,
+source hashes, and build hashes. A project version is persisted and published as
+`website_project.built` only when every computed check passes; the Business Brain exposes
+only its bounded build metadata. Generated commands and package scripts are never
+executed, and deployment, publication, domains, providers, production credentials, and
+the Phase 22 sandbox remain absent. The schema head is `20260825_21`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -234,7 +247,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, strategy approval-boundary, product/offer approval-boundary, brand approval-boundary, and website-specification approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 20 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17 through 20 contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, strategy approval-boundary, product/offer approval-boundary, brand approval-boundary, website-specification approval-boundary, and controlled website-build smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 21 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17 through 21 contract, approval, and controlled-tool smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external

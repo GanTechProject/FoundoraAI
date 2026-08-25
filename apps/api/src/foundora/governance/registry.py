@@ -95,6 +95,12 @@ TOOL_CATALOG = {
         ToolDescriptor("foundora.internal.echo", "Internal echo", "R0", True),
         ToolDescriptor("foundora.internal.fail", "Internal deterministic failure", "R0", True),
         ToolDescriptor("foundora.internal.discard", "Internal discard", "R0", True),
+        ToolDescriptor("foundora.repository.website", "Controlled website repository", "R1", True),
+        ToolDescriptor("foundora.filesystem.website", "Controlled website filesystem", "R1", True),
+        ToolDescriptor(
+            "foundora.dependencies.website", "Reviewed website dependencies", "R1", True
+        ),
+        ToolDescriptor("foundora.checks.website", "Website build checks", "R1", True),
     )
 }
 

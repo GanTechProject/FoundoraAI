@@ -22,10 +22,17 @@ from foundora.agents.product_offer import (
 from foundora.agents.research import research_prompt_constraints, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.strategy import strategy_prompt_constraints, validate_strategy_output
+from foundora.agents.website_coding import (
+    WEBSITE_CODING_AGENT_ID,
+    WEBSITE_TOOL_IDS,
+    validate_website_coding_output,
+    website_coding_prompt_constraints,
+)
 from foundora.agents.website_specification import (
     validate_website_specification_output,
     website_specification_prompt_constraints,
 )
+from foundora.events.service import publish_event
 from foundora.infrastructure.database import get_session_factory
 from foundora.model_gateway.service import GatewayRequest, GatewayResult, ModelGateway
 from foundora.model_gateway.types import GatewayError
@@ -35,8 +42,17 @@ from foundora.models import (
     AgentRun,
     AgentSkillAssignment,
     AgentVersion,
+    GlobalGovernanceControl,
+    GovernanceToolPermission,
     Skill,
     SkillVersion,
+    WebsiteProjectVersion,
+    WebsiteSpecificationVersion,
+)
+from foundora.website_projects.tools import (
+    ControlledWebsiteBuilder,
+    ControlledWebsiteToolError,
+    WebsiteBuildArtifact,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +90,15 @@ class RuntimeRepository(Protocol):
 
     async def complete(self, run_id: uuid.UUID, output: dict[str, object]) -> bool: ...
 
+    async def complete_website_build(
+        self,
+        run_id: uuid.UUID,
+        output: dict[str, object],
+        artifact: WebsiteBuildArtifact,
+    ) -> bool: ...
+
+    async def authorize_website_build(self, run_id: uuid.UUID) -> bool: ...
+
     async def fail(self, run_id: uuid.UUID, error_type: str, message: str) -> bool: ...
 
 
@@ -86,6 +111,12 @@ class RuntimeGateway(Protocol):
         operation_id: uuid.UUID | None = None,
         agent_run_id: uuid.UUID | None = None,
     ) -> GatewayResult: ...
+
+
+class RuntimeWebsiteBuilder(Protocol):
+    def build(
+        self, structured_input: dict[str, object], output: dict[str, object]
+    ) -> WebsiteBuildArtifact: ...
 
 
 class SqlRuntimeRepository:
@@ -223,6 +254,191 @@ class SqlRuntimeRepository:
             await database.commit()
             return True
 
+    async def authorize_website_build(self, run_id: uuid.UUID) -> bool:
+        async with self._session_factory() as database:
+            run = await database.get(AgentRun, run_id)
+            if run is None or run.status != "running" or run.agent_id != WEBSITE_CODING_AGENT_ID:
+                return False
+            controls = await database.get(GlobalGovernanceControl, 1)
+            if controls is None or controls.kill_switch_enabled:
+                return False
+            disabled_tool = await database.scalar(
+                select(GovernanceToolPermission.tool_id).where(
+                    GovernanceToolPermission.business_id == run.business_id,
+                    GovernanceToolPermission.tool_id.in_(WEBSITE_TOOL_IDS),
+                    GovernanceToolPermission.enabled.is_(False),
+                )
+            )
+            return disabled_tool is None
+
+    async def complete_website_build(
+        self,
+        run_id: uuid.UUID,
+        output: dict[str, object],
+        artifact: WebsiteBuildArtifact,
+    ) -> bool:
+        async with self._session_factory() as database:
+            async with database.begin():
+                run = await database.scalar(
+                    select(AgentRun).where(AgentRun.id == run_id).with_for_update()
+                )
+                if run is None or run.status == "cancelled":
+                    return False
+                if run.status != "running" or run.agent_id != WEBSITE_CODING_AGENT_ID:
+                    return False
+                controls = await database.get(GlobalGovernanceControl, 1)
+                if controls is None or controls.kill_switch_enabled:
+                    raise AgentSchemaError("Governance kill switch blocks controlled website tools")
+                disabled_tools = set(
+                    await database.scalars(
+                        select(GovernanceToolPermission.tool_id).where(
+                            GovernanceToolPermission.business_id == run.business_id,
+                            GovernanceToolPermission.tool_id.in_(WEBSITE_TOOL_IDS),
+                            GovernanceToolPermission.enabled.is_(False),
+                        )
+                    )
+                )
+                if disabled_tools:
+                    raise AgentSchemaError("A required controlled website tool is disabled")
+                evidence = run.structured_input.get("website_coding_evidence")
+                if not isinstance(evidence, dict):
+                    raise AgentSchemaError("Pinned website coding evidence is missing")
+                specification_id = evidence.get("website_specification_id")
+                specification_version = evidence.get("website_specification_version")
+                try:
+                    specification_uuid = uuid.UUID(str(specification_id))
+                except (ValueError, TypeError) as error:
+                    raise AgentSchemaError(
+                        "Pinned website specification identity is invalid"
+                    ) from error
+                specification = await database.scalar(
+                    select(WebsiteSpecificationVersion)
+                    .where(
+                        WebsiteSpecificationVersion.id == specification_uuid,
+                        WebsiteSpecificationVersion.business_id == run.business_id,
+                        WebsiteSpecificationVersion.status == "active",
+                    )
+                    .with_for_update()
+                )
+                if (
+                    specification is None
+                    or specification.version != specification_version
+                    or specification.specification != evidence.get("approved_website_specification")
+                ):
+                    raise AgentSchemaError(
+                        "Approved website specification changed before the build completed"
+                    )
+                current = await database.scalar(
+                    select(WebsiteProjectVersion)
+                    .where(
+                        WebsiteProjectVersion.business_id == run.business_id,
+                        WebsiteProjectVersion.status == "active",
+                    )
+                    .with_for_update()
+                )
+                operation = output.get("project_operation")
+                base = evidence.get("base_project")
+                if operation == "modify":
+                    if (
+                        current is None
+                        or not isinstance(base, dict)
+                        or str(current.id) != base.get("project_id")
+                        or current.version != base.get("project_version")
+                        or current.source_digest != base.get("source_digest")
+                        or current.source_website_specification_id != specification.id
+                        or current.source_website_specification_version != specification.version
+                    ):
+                        raise AgentSchemaError(
+                            "The website base project changed before modification"
+                        )
+                elif operation == "generate":
+                    if (
+                        current is not None
+                        and current.source_website_specification_id == specification.id
+                        and current.source_website_specification_version == specification.version
+                    ):
+                        raise AgentSchemaError(
+                            "A current aligned project already exists; use modification"
+                        )
+                else:
+                    raise AgentSchemaError("Website project operation is invalid")
+
+                latest = await database.scalar(
+                    select(WebsiteProjectVersion)
+                    .where(WebsiteProjectVersion.business_id == run.business_id)
+                    .order_by(WebsiteProjectVersion.version.desc())
+                    .limit(1)
+                    .with_for_update()
+                )
+                now = _now()
+                if current is not None:
+                    current.status = "superseded"
+                    current.superseded_at = now
+                project = WebsiteProjectVersion(
+                    id=uuid.uuid4(),
+                    business_id=run.business_id,
+                    version=(latest.version + 1 if latest is not None else 1),
+                    status="active",
+                    operation=operation,
+                    source_agent_run_id=run.id,
+                    source_website_specification_id=specification.id,
+                    source_website_specification_version=specification.version,
+                    base_project_id=current.id if operation == "modify" and current else None,
+                    base_project_version=(
+                        current.version if operation == "modify" and current else None
+                    ),
+                    context_id=str(run.structured_input.get("context_id")),
+                    source_files=artifact.source_files,
+                    dependency_manifest=artifact.dependency_manifest,
+                    source_digest=artifact.source_digest,
+                    build_digest=artifact.build_digest,
+                    build_manifest=artifact.build_manifest,
+                    build_report=artifact.build_report,
+                    check_report=artifact.check_report,
+                    tool_audit=artifact.tool_audit,
+                    created_at=now,
+                    superseded_at=None,
+                )
+                database.add(project)
+                await database.flush()
+                await publish_event(
+                    database,
+                    business_id=run.business_id,
+                    event_type="website_project.built",
+                    aggregate_type="website_project",
+                    aggregate_id=str(project.id),
+                    idempotency_key=f"website-project:{project.id}:built",
+                    payload={
+                        "business_id": str(run.business_id),
+                        "website_project_id": str(project.id),
+                        "website_project_version": project.version,
+                        "operation": project.operation,
+                        "source_agent_run_id": str(run.id),
+                        "source_website_specification_id": str(specification.id),
+                        "source_website_specification_version": specification.version,
+                        "source_digest": project.source_digest,
+                        "build_digest": project.build_digest,
+                        "build_status": project.build_report.get("status"),
+                        "check_status": project.check_report.get("status"),
+                    },
+                    occurred_at=now,
+                )
+                run.status = "completed"
+                run.structured_output = output
+                run.completed_at = now
+                database.add(
+                    AgentMessage(
+                        id=uuid.uuid4(),
+                        run_id=run.id,
+                        sequence=2,
+                        role="assistant",
+                        message_type="output",
+                        content=output,
+                        created_at=now,
+                    )
+                )
+            return True
+
     async def fail(self, run_id: uuid.UUID, error_type: str, message: str) -> bool:
         async with self._session_factory() as database:
             run = await database.scalar(
@@ -267,10 +483,16 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
         raise AgentSchemaError("Model policy routing is invalid")
     if not isinstance(allow_fallback, bool):
         raise AgentSchemaError("Model policy fallback setting is invalid")
+    authority_boundary = (
+        "You may propose bounded internal source changes only; the controlled runtime applies "
+        "and verifies them. Do not perform or claim tool results or external actions."
+        if claim.agent_id == WEBSITE_CODING_AGENT_ID
+        else "You are read-only and must not perform or claim external actions."
+    )
     system_prompt = (
         f"You are {claim.agent_id} version {claim.version}. Role: {claim.role}. "
-        f"Purpose: {claim.purpose} You are read-only and must not perform or claim "
-        "external actions. Use only the supplied run input, including explicitly pinned "
+        f"Purpose: {claim.purpose} {authority_boundary} Use only the supplied run input, "
+        "including explicitly pinned "
         "context or evidence. Distinguish missing facts from assumptions. Return only JSON "
         "matching the supplied schema. "
         f"Forbidden actions: {json.dumps(claim.forbidden_actions, ensure_ascii=False)}"
@@ -291,6 +513,7 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
     system_prompt += website_specification_prompt_constraints(
         claim.agent_id, claim.structured_input
     )
+    system_prompt += website_coding_prompt_constraints(claim.agent_id, claim.structured_input)
     return GatewayRequest(
         task_type=task_type,
         prompt=json.dumps(claim.structured_input, ensure_ascii=False, sort_keys=True),
@@ -309,9 +532,11 @@ class AgentRuntime:
         self,
         repository: RuntimeRepository | None = None,
         gateway: RuntimeGateway | None = None,
+        website_builder: RuntimeWebsiteBuilder | None = None,
     ) -> None:
         self._repository = repository or SqlRuntimeRepository()
         self._gateway = gateway or ModelGateway()
+        self._website_builder = website_builder or ControlledWebsiteBuilder()
 
     async def execute(self, run_id: uuid.UUID) -> None:
         operation_id = uuid.uuid4()
@@ -321,7 +546,11 @@ class AgentRuntime:
         try:
             validate_schema(claim.structured_input, claim.input_schema)
             if claim.skill_id is not None:
-                if claim.skill_tool_requirements:
+                if claim.skill_tool_requirements and (
+                    claim.agent_id != WEBSITE_CODING_AGENT_ID
+                    or tuple(claim.skill_tool_requirements) != WEBSITE_TOOL_IDS
+                    or set(claim.skill_tool_requirements).difference(claim.skill_permissions)
+                ):
                     raise AgentSchemaError("Assigned skill requires unsupported tools")
                 skill_payload = claim.structured_input.get("skill")
                 if not isinstance(skill_payload, dict):
@@ -356,9 +585,18 @@ class AgentRuntime:
             validate_product_offer_output(claim.agent_id, claim.structured_input, output)
             validate_brand_output(claim.agent_id, claim.structured_input, output)
             validate_website_specification_output(claim.agent_id, claim.structured_input, output)
-            await self._repository.complete(run_id, output)
+            validate_website_coding_output(claim.agent_id, claim.structured_input, output)
+            if claim.agent_id == WEBSITE_CODING_AGENT_ID:
+                if not await self._repository.authorize_website_build(run_id):
+                    raise AgentSchemaError("Governance blocks one or more controlled website tools")
+                artifact = self._website_builder.build(claim.structured_input, output)
+                await self._repository.complete_website_build(run_id, output, artifact)
+            else:
+                await self._repository.complete(run_id, output)
         except AgentSchemaError as error:
             await self._repository.fail(run_id, "agent_schema_invalid", str(error))
+        except ControlledWebsiteToolError as error:
+            await self._repository.fail(run_id, "controlled_tool_failed", str(error))
         except GatewayError as error:
             safe_message = getattr(error, "safe_message", str(error))
             await self._repository.fail(run_id, error.code, safe_message)

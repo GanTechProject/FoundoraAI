@@ -8,11 +8,14 @@ export const contextSourceTypes = [
   "approved_goals",
   "products_services",
   "brand",
+  "website_specification",
+  "website_project",
   "operating_context",
   "operational_goals",
   "current_tasks",
   "knowledge",
   "relevant_memories",
+  "approved_strategy",
 ] as const;
 
 export type ContextSourceType = (typeof contextSourceTypes)[number];

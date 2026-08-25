@@ -22,6 +22,11 @@ from foundora.agents.product_offer import PRODUCT_OFFER_AGENT_ID, strategy_item_
 from foundora.agents.research import RESEARCH_AGENT_IDS, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.strategy import BUSINESS_STRATEGIST_AGENT_ID
+from foundora.agents.website_coding import (
+    WEBSITE_BUILD_SKILL_ID,
+    WEBSITE_CODING_AGENT_ID,
+    specification_item_references,
+)
 from foundora.agents.website_specification import (
     WEBSITE_SPECIFICATION_AGENT_ID,
     brand_system_references,
@@ -47,6 +52,8 @@ from foundora.models import (
     ProductOfferVersion,
     Skill,
     SkillVersion,
+    WebsiteProjectVersion,
+    WebsiteSpecificationVersion,
 )
 from foundora.search.provider import (
     RegisteredKnowledgeSearchProvider,
@@ -96,6 +103,10 @@ class BrandEvidenceInvalid(Exception):
 
 
 class WebsiteSpecificationEvidenceInvalid(Exception):
+    pass
+
+
+class WebsiteCodingEvidenceInvalid(Exception):
     pass
 
 
@@ -410,6 +421,15 @@ class AgentService:
                 raise StrategyEvidenceInvalid
         elif selected_research_run_ids:
             raise StrategyEvidenceInvalid
+
+        if agent.id == WEBSITE_CODING_AGENT_ID:
+            operation = normalized_skill_input.get("operation")
+            if (
+                skill_version is None
+                or skill_version.skill_id != WEBSITE_BUILD_SKILL_ID
+                or operation not in {"generate", "modify"}
+            ):
+                raise WebsiteCodingEvidenceInvalid
 
         policy = version.model_policy
         context_budget = policy.get("context_token_budget")
@@ -731,6 +751,103 @@ class AgentService:
                 "brand_item_refs": sorted(brand_refs),
                 "approved_brand_system": approved_brand.brand_system,
             }
+        if agent.id == WEBSITE_CODING_AGENT_ID:
+            async with self._session_factory() as database:
+                approved_specification = await database.scalar(
+                    select(WebsiteSpecificationVersion).where(
+                        WebsiteSpecificationVersion.business_id == business.id,
+                        WebsiteSpecificationVersion.status == "active",
+                    )
+                )
+                current_project = await database.scalar(
+                    select(WebsiteProjectVersion).where(
+                        WebsiteProjectVersion.business_id == business.id,
+                        WebsiteProjectVersion.status == "active",
+                    )
+                )
+            if approved_specification is None:
+                raise WebsiteCodingEvidenceInvalid
+            specification_refs = specification_item_references(
+                approved_specification.specification,
+                str(approved_specification.id),
+                approved_specification.version,
+            )
+            if not specification_refs:
+                raise WebsiteCodingEvidenceInvalid
+            sources = compiled_context.get("sources")
+            source_items = sources if isinstance(sources, list) else []
+            specification_source = next(
+                (
+                    item
+                    for item in source_items
+                    if isinstance(item, dict)
+                    and item.get("authority") == "founder_approved_website_specification"
+                ),
+                None,
+            )
+            source_content = (
+                specification_source.get("content")
+                if isinstance(specification_source, dict)
+                else None
+            )
+            if (
+                not isinstance(specification_source, dict)
+                or specification_source.get("source_version") != str(approved_specification.version)
+                or not isinstance(source_content, dict)
+                or source_content.get("website_specification_id") != str(approved_specification.id)
+                or source_content.get("source_agent_run_id")
+                != str(approved_specification.source_agent_run_id)
+                or source_content.get("specification") != approved_specification.specification
+            ):
+                raise WebsiteCodingEvidenceInvalid
+            operation = normalized_skill_input.get("operation")
+            aligned_current = (
+                current_project is not None
+                and current_project.source_website_specification_id == approved_specification.id
+                and current_project.source_website_specification_version
+                == approved_specification.version
+            )
+            requested_base_version = normalized_skill_input.get("base_project_version")
+            if operation == "generate" and aligned_current:
+                raise WebsiteCodingEvidenceInvalid
+            if operation == "modify" and (
+                not aligned_current
+                or not isinstance(requested_base_version, int)
+                or isinstance(requested_base_version, bool)
+                or current_project is None
+                or current_project.version != requested_base_version
+            ):
+                raise WebsiteCodingEvidenceInvalid
+            base_project = None
+            if operation == "modify" and current_project is not None:
+                base_project = {
+                    "project_id": str(current_project.id),
+                    "project_version": current_project.version,
+                    "source_website_specification_id": str(
+                        current_project.source_website_specification_id
+                    ),
+                    "source_website_specification_version": (
+                        current_project.source_website_specification_version
+                    ),
+                    "source_digest": current_project.source_digest,
+                    "build_digest": current_project.build_digest,
+                    "dependency_manifest": current_project.dependency_manifest,
+                    "source_files": current_project.source_files,
+                }
+            coding_evidence: dict[str, object] = {
+                "website_specification_id": str(approved_specification.id),
+                "website_specification_version": approved_specification.version,
+                "website_specification_source_agent_run_id": str(
+                    approved_specification.source_agent_run_id
+                ),
+                "website_specification_context_id": approved_specification.context_id,
+                "specification_item_refs": sorted(specification_refs),
+                "approved_website_specification": approved_specification.specification,
+                "requested_operation": operation,
+            }
+            if base_project is not None:
+                coding_evidence["base_project"] = base_project
+            structured_input["website_coding_evidence"] = coding_evidence
         evidence: list[SearchEvidence] = []
         if normalized_research_query is not None:
             try:
