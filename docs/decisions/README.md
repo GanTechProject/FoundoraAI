@@ -24,5 +24,6 @@
 | [ADR-0020](ADR-0020-traceable-advisory-executive-agents.md)         | Traceable advisory executive agents with no execution authority           | Accepted |
 | [ADR-0021](ADR-0021-founder-approved-evidence-linked-strategy.md)   | Founder-approved, evidence-linked business strategy                       | Accepted |
 | [ADR-0022](ADR-0022-immutable-founder-approved-product-offers.md)   | Immutable, founder-approved product and offer portfolio versions          | Accepted |
+| [ADR-0023](ADR-0023-founder-approved-evidence-linked-brand-system.md) | Founder-approved, evidence-linked brand system                          | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

@@ -76,7 +76,9 @@ export default async function AgentsPage({
             facts. None can execute tools, create tasks, grant approvals, spend,
             or claim a delegation occurred. The Product &amp; Offer Agent turns
             the current approved strategy into traceable proposals that still
-            require separate founder approval.
+            require separate founder approval. The Brand Strategist converts the
+            aligned approved strategy and offer into reusable proposed brand
+            rules with no publishing authority.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -91,6 +93,9 @@ export default async function AgentsPage({
           </Link>
           <Link className="text-link" href="/products-offers">
             Products &amp; offers
+          </Link>
+          <Link className="text-link" href="/brand">
+            Brand
           </Link>
           <Link className="text-link" href="/tasks">
             Task engine

@@ -1088,7 +1088,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
     }
     $eventDeliveries = @($eventDashboard.events | ForEach-Object { $_.deliveries })
     if ($eventDashboard.business_id -ne $businessBId -or `
-            $eventDashboard.contracts.Count -ne 15 -or `
+            $eventDashboard.contracts.Count -ne 16 -or `
             @($eventDeliveries | Where-Object {
                 $_.status -ne "completed" -or $_.attempt_count -ne 1
             }).Count -ne 0) {
@@ -1799,6 +1799,79 @@ Quasar retention research shows founder-led design studios prefer predictable an
     }
     Write-Output "Phase 18 product and offer contract and approval-boundary smoke passed"
 
+    # Phase 19 is deterministic here: inspect the immutable advisory contract
+    # and verify the aligned strategy/offer and founder-approval boundaries.
+    $phase19Agent = $phase16Dashboard.definitions | Where-Object {
+        $_.agent_id -eq "brand-strategist"
+    } | Select-Object -First 1
+    $phase19RequiredArtifacts = @(
+        "brand_strategy",
+        "positioning",
+        "naming_analysis",
+        "voice",
+        "messaging",
+        "visual_direction",
+        "brand_rules",
+        "asset_references",
+        "tagline"
+    )
+    if (-not $phase19Agent -or `
+            $phase19Agent.version -ne 1 -or `
+            $phase19Agent.risk_level -ne "R0" -or `
+            $phase19Agent.maximum_autonomy -ne "manual_advisory_only" -or `
+            @($phase19Agent.allowed_tools).Count -ne 0 -or `
+            @($phase19Agent.allowed_skills).Count -ne 0 -or `
+            $phase19Agent.data_access_scope.approved_strategy -ne `
+                "required_exact_current_version" -or `
+            $phase19Agent.data_access_scope.approved_product_offer -ne `
+                "required_exact_active_version" -or `
+            @($phase19Agent.input_schema.required) -notcontains "brand_evidence") {
+        throw "Phase 19 Brand Strategist contract can exceed its advisory boundary"
+    }
+    foreach ($artifact in $phase19RequiredArtifacts) {
+        if (@($phase19Agent.output_schema.required) -notcontains $artifact) {
+            throw "Phase 19 brand schema is missing $artifact"
+        }
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/agents/brand-strategist/runs" `
+            -Method Post `
+            -Headers @{
+                Origin = $smokePublicOrigin
+                "X-CSRF-Token" = $csrfCookie.Value
+            } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                    objective = "Propose an approved-evidence-linked brand system"
+                } | ConvertTo-Json -Depth 4 -Compress)
+    }
+    $phase19Dashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/brand" `
+        -WebSession $ownerSession
+    if ($phase19Dashboard.current_version -ne 0 -or `
+            $phase19Dashboard.current -or `
+            @($phase19Dashboard.versions).Count -ne 0 -or `
+            @($phase19Dashboard.candidate_runs).Count -ne 0) {
+        throw "Phase 19 approval domain did not begin in an explicit unapproved state"
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/brand/approve" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                    run_id = "00000000-0000-0000-0000-000000001901"
+                    expected_version = 0
+                } | ConvertTo-Json -Compress)
+    }
+    $phase19Page = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/brand" -WebSession $phase15WebSession
+    if (-not $phase19Page.Content.Contains("Approved rules, reusable brand direction") -or `
+            -not $phase19Page.Content.Contains("Not approved yet")) {
+        throw "Phase 19 protected brand review UI did not render"
+    }
+    Write-Output "Phase 19 brand contract and approval-boundary smoke passed"
+
     $gatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
         -WebSession $ownerSession
     $openAiStatus = $gatewayDashboard.providers | `
@@ -1926,7 +1999,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
         $_.agent_id -eq "chief-of-staff-planning"
     } | Select-Object -First 1
     if ($agentDashboard.business_id -ne $businessBId -or `
-            $agentDashboard.definitions.Count -ne 6 -or `
+            $agentDashboard.definitions.Count -ne 9 -or `
             -not $verificationAgent -or `
             $verificationAgent.version -ne 2 -or `
             $verificationAgent.risk_level -ne "R0" -or `
@@ -2287,8 +2360,8 @@ Quasar retention research shows founder-led design studios prefer predictable an
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_18") {
-        throw "Isolated product-and-offer migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_19") {
+        throw "Isolated brand-system migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -2346,6 +2419,12 @@ Quasar retention research shows founder-led design studios prefer predictable an
         "SELECT (SELECT count(*) FROM agents WHERE id = 'product-offer' AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id = 'product-offer' AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0 AND data_access_scope->>'approved_strategy' = 'required_exact_current_version') || '|' || (SELECT count(*) FROM product_offer_versions)"
     if ($LASTEXITCODE -ne 0 -or $productOfferEvidence.Trim() -ne "1|1|0") {
         throw "Phase 18 product and offer agent or approval-domain evidence is incorrect"
+    }
+    $brandEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM agents WHERE id = 'brand-strategist' AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id = 'brand-strategist' AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0 AND data_access_scope->>'approved_strategy' = 'required_exact_current_version' AND data_access_scope->>'approved_product_offer' = 'required_exact_active_version') || '|' || (SELECT count(*) FROM brand_system_versions)"
+    if ($LASTEXITCODE -ne 0 -or $brandEvidence.Trim() -ne "1|1|0") {
+        throw "Phase 19 Brand Strategist or approval-domain evidence is incorrect"
     }
     $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -2525,8 +2604,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_18") {
-    throw "Product-and-offer migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_19") {
+    throw "Brand-system migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

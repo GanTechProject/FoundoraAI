@@ -250,6 +250,44 @@ class ProductOfferVersion(Base):
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class BrandSystemVersion(Base):
+    __tablename__ = "brand_system_versions"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_brand_system_versions_version"),
+        CheckConstraint(
+            "status IN ('active', 'superseded')",
+            name="ck_brand_system_versions_status",
+        ),
+        UniqueConstraint(
+            "business_id", "version", name="uq_brand_system_versions_business_version"
+        ),
+        UniqueConstraint("source_agent_run_id", name="uq_brand_system_versions_source_run"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    source_agent_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="RESTRICT")
+    )
+    source_strategy_version: Mapped[int] = mapped_column(Integer)
+    source_product_offer_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("product_offer_versions.id", ondelete="RESTRICT")
+    )
+    source_product_offer_version: Mapped[int] = mapped_column(Integer)
+    context_id: Mapped[str] = mapped_column(String(64))
+    brand_system: Mapped[dict[str, object]] = mapped_column(JSON)
+    evidence_refs: Mapped[dict[str, object]] = mapped_column(JSON)
+    approved_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Agent(Base):
     __tablename__ = "agents"
     __table_args__ = (CheckConstraint("current_version > 0", name="ck_agents_current_version"),)

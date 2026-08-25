@@ -19,6 +19,7 @@ from foundora.agents.service import (
     AgentRunNotFound,
     AgentRunRecord,
     AgentService,
+    BrandEvidenceInvalid,
     ProductOfferEvidenceInvalid,
     ResearchQueryInvalid,
     ResearchSearchRecord,
@@ -556,6 +557,17 @@ async def create_agent_run(
                 "message": (
                     "Product and offer proposals require the current founder-approved "
                     "business strategy"
+                ),
+            },
+        ) from error
+    except BrandEvidenceInvalid as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_brand_evidence",
+                "message": (
+                    "Brand proposals require the current approved strategy and an active "
+                    "approved product and offer portfolio derived from that strategy"
                 ),
             },
         ) from error

@@ -192,7 +192,19 @@ Open `/products-offers` to approve a proposal. Each approval creates a new immut
 portfolio version, supersedes the previous active version, publishes a transactional
 event, and exposes the active portfolio as authoritative `products_services` Business
 Brain data. The agent has no tools, provider selection, launch, sales, delivery, brand,
-or self-approval authority. The schema head is `20260825_18`.
+or self-approval authority.
+
+The registry also includes `brand-strategist@1`. It requires the exact current
+founder-approved strategy and the active founder-approved product/offer portfolio
+derived from that strategy. Each proposed brand strategy, positioning statement,
+naming analysis, voice rule, message, tagline, visual direction, brand rule, and
+asset reference cites both immutable sources. Naming availability is explicitly
+unchecked and asset references remain proposals. Open `/brand` to approve a completed
+proposal. Approval creates an immutable brand-system version, supersedes the prior
+active version, publishes `brand.approved`, and exposes both the complete system and
+its approved `brand_rules` through the provider-neutral Business Brain. The agent
+cannot self-approve, create assets, publish, or claim trademark/domain availability.
+The schema head is `20260825_19`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -212,7 +224,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, strategy approval-boundary, and product/offer approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 18 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17â€“18 contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, strategy approval-boundary, product/offer approval-boundary, and brand approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 19 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17 through 19 contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external

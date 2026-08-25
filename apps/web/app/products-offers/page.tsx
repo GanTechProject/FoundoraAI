@@ -63,6 +63,9 @@ export default async function ProductsOffersPage({
           <Link className="text-link" href="/brain">
             Business brain
           </Link>
+          <Link className="text-link" href="/brand">
+            Brand
+          </Link>
           <Link className="text-link" href="/workspace">
             Workspace
           </Link>

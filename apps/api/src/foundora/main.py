@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from foundora import __version__
 from foundora.api.agents import router as agents_router
 from foundora.api.auth import router as auth_router
+from foundora.api.brand import router as brand_router
 from foundora.api.business_brain import router as business_brain_router
 from foundora.api.businesses import router as businesses_router
 from foundora.api.events import router as events_router
@@ -135,6 +136,7 @@ def create_app() -> FastAPI:
     application.include_router(memory_router)
     application.include_router(strategy_router)
     application.include_router(product_offers_router)
+    application.include_router(brand_router)
     return application
 
 

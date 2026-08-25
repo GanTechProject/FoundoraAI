@@ -19,6 +19,7 @@ from foundora.memory.service import retrieve_memories
 from foundora.models import (
     ApprovedBusinessProfile,
     ApprovedBusinessStrategy,
+    BrandSystemVersion,
     BusinessGoal,
     BusinessPreference,
     MemoryProvenance,
@@ -265,6 +266,12 @@ class ContextService:
                     ProductOfferVersion.status == "active",
                 )
             )
+            approved_brand = await database.scalar(
+                select(BrandSystemVersion).where(
+                    BrandSystemVersion.business_id == business.id,
+                    BrandSystemVersion.status == "active",
+                )
+            )
             goals = list(
                 await database.scalars(
                     select(BusinessGoal)
@@ -371,6 +378,10 @@ class ContextService:
                 approved_candidates = [
                     item for item in approved_candidates if item.source_type != "products_services"
                 ]
+            if approved_brand is not None:
+                approved_candidates = [
+                    item for item in approved_candidates if item.source_type != "brand"
+                ]
             candidates.extend(approved_candidates)
         if approved_strategy is None:
             unavailable["approved_strategy"] = (
@@ -381,6 +392,9 @@ class ContextService:
         if approved_product_offer is not None:
             unavailable.pop("products_services", None)
             candidates.append(self._approved_product_offer_candidate(approved_product_offer))
+        if approved_brand is not None:
+            unavailable.pop("brand", None)
+            candidates.append(self._approved_brand_candidate(approved_brand))
         candidates.extend(self._goal_candidates(goals))
         if not goals:
             unavailable["operational_goals"] = "No business goals are recorded."
@@ -453,6 +467,30 @@ class ContextService:
                 "context_id": portfolio.context_id,
                 "portfolio": portfolio.portfolio,
                 "evidence_refs": portfolio.evidence_refs,
+            },
+        )
+
+    @staticmethod
+    def _approved_brand_candidate(brand: BrandSystemVersion) -> ContextCandidate:
+        return ContextCandidate(
+            source_type="brand",
+            source_reference=f"brand_system_versions/{brand.id}",
+            source_version=str(brand.version),
+            authority="founder_approved_brand_system",
+            label=f"Founder-approved brand system v{brand.version}",
+            updated_at=brand.approved_at,
+            validity="current",
+            content={
+                "brand_system_id": str(brand.id),
+                "status": brand.status,
+                "source_agent_run_id": str(brand.source_agent_run_id),
+                "source_strategy_version": brand.source_strategy_version,
+                "source_product_offer_id": str(brand.source_product_offer_id),
+                "source_product_offer_version": brand.source_product_offer_version,
+                "context_id": brand.context_id,
+                "brand_system": brand.brand_system,
+                "brand_rules": brand.brand_system.get("brand_rules", []),
+                "evidence_refs": brand.evidence_refs,
             },
         )
 

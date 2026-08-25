@@ -14,6 +14,10 @@ from rq.job import JobStatus
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from foundora.agents.brand import (
+    BRAND_STRATEGIST_AGENT_ID,
+    product_offer_references,
+)
 from foundora.agents.product_offer import PRODUCT_OFFER_AGENT_ID, strategy_item_references
 from foundora.agents.research import RESEARCH_AGENT_IDS, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
@@ -35,6 +39,7 @@ from foundora.models import (
     AgentVersion,
     ApprovedBusinessStrategy,
     ModelGatewayCall,
+    ProductOfferVersion,
     Skill,
     SkillVersion,
 )
@@ -78,6 +83,10 @@ class StrategyEvidenceInvalid(Exception):
 
 
 class ProductOfferEvidenceInvalid(Exception):
+    pass
+
+
+class BrandEvidenceInvalid(Exception):
     pass
 
 
@@ -533,6 +542,82 @@ class AgentService:
                 "strategy_context_id": approved_strategy.context_id,
                 "strategy_item_refs": sorted(strategy_refs),
                 "approved_strategy": approved_strategy.strategy,
+            }
+        if agent.id == BRAND_STRATEGIST_AGENT_ID:
+            async with self._session_factory() as database:
+                approved_strategy = await database.get(ApprovedBusinessStrategy, business.id)
+                approved_product_offer = await database.scalar(
+                    select(ProductOfferVersion).where(
+                        ProductOfferVersion.business_id == business.id,
+                        ProductOfferVersion.status == "active",
+                    )
+                )
+            if (
+                approved_strategy is None
+                or approved_product_offer is None
+                or approved_product_offer.source_strategy_version != approved_strategy.version
+            ):
+                raise BrandEvidenceInvalid
+            strategy_refs = strategy_item_references(
+                approved_strategy.strategy, business.id, approved_strategy.version
+            )
+            offer_refs = product_offer_references(
+                approved_product_offer.portfolio,
+                approved_product_offer.id,
+                approved_product_offer.version,
+            )
+            if not strategy_refs or not offer_refs:
+                raise BrandEvidenceInvalid
+            sources = compiled_context.get("sources")
+            source_items = sources if isinstance(sources, list) else []
+            strategy_source = next(
+                (
+                    item
+                    for item in source_items
+                    if isinstance(item, dict)
+                    and item.get("authority") == "founder_approved_strategy"
+                ),
+                None,
+            )
+            offer_source = next(
+                (
+                    item
+                    for item in source_items
+                    if isinstance(item, dict)
+                    and item.get("authority") == "founder_approved_product_offer"
+                ),
+                None,
+            )
+            strategy_content = (
+                strategy_source.get("content") if isinstance(strategy_source, dict) else None
+            )
+            offer_content = offer_source.get("content") if isinstance(offer_source, dict) else None
+            if (
+                not isinstance(strategy_source, dict)
+                or strategy_source.get("source_version") != str(approved_strategy.version)
+                or not isinstance(strategy_content, dict)
+                or strategy_content.get("strategy") != approved_strategy.strategy
+                or not isinstance(offer_source, dict)
+                or offer_source.get("source_version") != str(approved_product_offer.version)
+                or not isinstance(offer_content, dict)
+                or offer_content.get("portfolio_id") != str(approved_product_offer.id)
+                or offer_content.get("portfolio") != approved_product_offer.portfolio
+            ):
+                raise BrandEvidenceInvalid
+            structured_input["brand_evidence"] = {
+                "strategy_version": approved_strategy.version,
+                "strategy_source_agent_run_id": str(approved_strategy.source_agent_run_id),
+                "strategy_context_id": approved_strategy.context_id,
+                "strategy_item_refs": sorted(strategy_refs),
+                "approved_strategy": approved_strategy.strategy,
+                "product_offer_id": str(approved_product_offer.id),
+                "product_offer_version": approved_product_offer.version,
+                "product_offer_source_agent_run_id": str(
+                    approved_product_offer.source_agent_run_id
+                ),
+                "product_offer_context_id": approved_product_offer.context_id,
+                "product_offer_refs": sorted(offer_refs),
+                "approved_product_offer": approved_product_offer.portfolio,
             }
         evidence: list[SearchEvidence] = []
         if normalized_research_query is not None:

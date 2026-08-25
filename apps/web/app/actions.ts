@@ -390,6 +390,24 @@ export async function approveProductOffer(formData: FormData): Promise<never> {
   redirect("/products-offers?updated=approved");
 }
 
+export async function approveBrand(formData: FormData): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest("/brand/approve", {
+      run_id: field(formData, "run_id"),
+      expected_version: Number(field(formData, "expected_version")),
+    });
+  } catch {
+    redirect("/brand?error=unavailable");
+  }
+  if (!response.ok) {
+    redirect(
+      `/brand?error=${response.status === 409 ? "conflict" : response.status === 422 ? "invalid" : "unavailable"}`,
+    );
+  }
+  redirect("/brand?updated=approved");
+}
+
 function taskError(response: Response): string {
   if (response.status === 404) return "not-found";
   if (response.status === 409) return "conflict";

@@ -10,6 +10,7 @@ from typing import Protocol, cast
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from foundora.agents.brand import brand_prompt_constraints, validate_brand_output
 from foundora.agents.executive import (
     executive_prompt_constraints,
     validate_executive_output,
@@ -282,6 +283,7 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
     system_prompt += research_prompt_constraints(claim.agent_id, claim.structured_input)
     system_prompt += strategy_prompt_constraints(claim.agent_id, claim.structured_input)
     system_prompt += product_offer_prompt_constraints(claim.agent_id, claim.structured_input)
+    system_prompt += brand_prompt_constraints(claim.agent_id, claim.structured_input)
     return GatewayRequest(
         task_type=task_type,
         prompt=json.dumps(claim.structured_input, ensure_ascii=False, sort_keys=True),
@@ -345,6 +347,7 @@ class AgentRuntime:
             validate_research_output(claim.agent_id, claim.structured_input, output)
             validate_strategy_output(claim.agent_id, claim.structured_input, output)
             validate_product_offer_output(claim.agent_id, claim.structured_input, output)
+            validate_brand_output(claim.agent_id, claim.structured_input, output)
             await self._repository.complete(run_id, output)
         except AgentSchemaError as error:
             await self._repository.fail(run_id, "agent_schema_invalid", str(error))
