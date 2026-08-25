@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, executive planning, source-backed research agents, and founder-approved evidence-linked business strategy.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, executive planning, source-backed research agents, founder-approved evidence-linked business strategy, and immutable founder-approved product and offer portfolios.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -182,8 +182,17 @@ supported-finding references. Pricing remains a hypothesis and assumptions state
 how they require validation. Open `/strategy` to review completed proposals and
 explicitly approve one with optimistic version protection. Approval creates the
 versioned `approved_strategy` Business Brain source and a transactional audit
-event; the agent cannot self-approve or execute the strategy. The schema head is
-`20260825_17`.
+event; the agent cannot self-approve or execute the strategy.
+
+The registry also includes `product-offer@1`. It requires the exact current
+founder-approved strategy, pins every strategy item reference, and proposes target
+segments, products/services, benefits, packages, and explicit prices. All entities
+remain proposed and all prices remain marked `requires_validation` until reviewed.
+Open `/products-offers` to approve a proposal. Each approval creates a new immutable
+portfolio version, supersedes the previous active version, publishes a transactional
+event, and exposes the active portfolio as authoritative `products_services` Business
+Brain data. The agent has no tools, provider selection, launch, sales, delivery, brand,
+or self-approval authority. The schema head is `20260825_18`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -203,7 +212,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, and strategy approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 17 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17 strategy contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, strategy approval-boundary, and product/offer approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 18 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17â€“18 contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external
@@ -220,4 +229,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue and reconciles durable event deliveries directly from PostgreSQL. Business workspaces, onboarding drafts, founder-approved profiles, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, policy versions, governance controls, action approvals, audit evidence, domain events, consumer deliveries, knowledge sources/documents/chunks/vectors, memory policies/proposals/records/revisions/provenance, and model usage are durable PostgreSQL records. Original knowledge files use the configured storage abstraction. Business-brain context remains derived from authoritative selected-business records, explicitly retrieved cited knowledge, and active curated memory. External provider tools and later operational domains remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue and reconciles durable event deliveries directly from PostgreSQL. Business workspaces, onboarding drafts, founder-approved profiles and strategies, immutable product/offer versions, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, policy versions, governance controls, action approvals, audit evidence, domain events, consumer deliveries, knowledge sources/documents/chunks/vectors, memory policies/proposals/records/revisions/provenance, and model usage are durable PostgreSQL records. Original knowledge files use the configured storage abstraction. Business-brain context remains derived from authoritative selected-business records, explicitly retrieved cited knowledge, and active curated memory. External provider tools and later operational domains remain deferred to their authorized phases.

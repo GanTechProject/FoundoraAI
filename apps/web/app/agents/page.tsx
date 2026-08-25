@@ -74,7 +74,9 @@ export default async function AgentsPage({
             The Business Strategist consumes one completed supported run from
             each research role and ties every proposed artifact to approved
             facts. None can execute tools, create tasks, grant approvals, spend,
-            or claim a delegation occurred.
+            or claim a delegation occurred. The Product &amp; Offer Agent turns
+            the current approved strategy into traceable proposals that still
+            require separate founder approval.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -86,6 +88,9 @@ export default async function AgentsPage({
           </Link>
           <Link className="text-link" href="/strategy">
             Strategy
+          </Link>
+          <Link className="text-link" href="/products-offers">
+            Products &amp; offers
           </Link>
           <Link className="text-link" href="/tasks">
             Task engine

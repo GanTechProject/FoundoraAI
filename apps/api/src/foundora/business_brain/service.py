@@ -23,6 +23,7 @@ from foundora.models import (
     BusinessPreference,
     MemoryProvenance,
     MemoryRecord,
+    ProductOfferVersion,
     Task,
     TaskDependency,
 )
@@ -258,6 +259,12 @@ class ContextService:
                 raise NoSelectedBusiness
             approved = await database.get(ApprovedBusinessProfile, business.id)
             approved_strategy = await database.get(ApprovedBusinessStrategy, business.id)
+            approved_product_offer = await database.scalar(
+                select(ProductOfferVersion).where(
+                    ProductOfferVersion.business_id == business.id,
+                    ProductOfferVersion.status == "active",
+                )
+            )
             goals = list(
                 await database.scalars(
                     select(BusinessGoal)
@@ -359,13 +366,21 @@ class ContextService:
             ):
                 unavailable[source_type] = reason
         else:
-            candidates.extend(self._approved_candidates(approved))
+            approved_candidates = self._approved_candidates(approved)
+            if approved_product_offer is not None:
+                approved_candidates = [
+                    item for item in approved_candidates if item.source_type != "products_services"
+                ]
+            candidates.extend(approved_candidates)
         if approved_strategy is None:
             unavailable["approved_strategy"] = (
                 "No founder-approved business strategy exists for this business."
             )
         else:
             candidates.append(self._approved_strategy_candidate(approved_strategy))
+        if approved_product_offer is not None:
+            unavailable.pop("products_services", None)
+            candidates.append(self._approved_product_offer_candidate(approved_product_offer))
         candidates.extend(self._goal_candidates(goals))
         if not goals:
             unavailable["operational_goals"] = "No business goals are recorded."
@@ -415,6 +430,29 @@ class ContextService:
                 "context_id": strategy.context_id,
                 "strategy": strategy.strategy,
                 "evidence_refs": strategy.evidence_refs,
+            },
+        )
+
+    @staticmethod
+    def _approved_product_offer_candidate(
+        portfolio: ProductOfferVersion,
+    ) -> ContextCandidate:
+        return ContextCandidate(
+            source_type="products_services",
+            source_reference=f"product_offer_versions/{portfolio.id}",
+            source_version=str(portfolio.version),
+            authority="founder_approved_product_offer",
+            label=f"Founder-approved product and offer portfolio v{portfolio.version}",
+            updated_at=portfolio.approved_at,
+            validity="current",
+            content={
+                "portfolio_id": str(portfolio.id),
+                "status": portfolio.status,
+                "source_agent_run_id": str(portfolio.source_agent_run_id),
+                "source_strategy_version": portfolio.source_strategy_version,
+                "context_id": portfolio.context_id,
+                "portfolio": portfolio.portfolio,
+                "evidence_refs": portfolio.evidence_refs,
             },
         )
 

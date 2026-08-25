@@ -63,6 +63,9 @@ export default async function StrategyPage({
           <Link className="text-link" href="/brain">
             Business brain
           </Link>
+          <Link className="text-link" href="/products-offers">
+            Products &amp; offers
+          </Link>
           <Link className="text-link" href="/workspace">
             Workspace
           </Link>

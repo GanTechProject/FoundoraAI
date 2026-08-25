@@ -14,6 +14,7 @@ from rq.job import JobStatus
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from foundora.agents.product_offer import PRODUCT_OFFER_AGENT_ID, strategy_item_references
 from foundora.agents.research import RESEARCH_AGENT_IDS, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.strategy import BUSINESS_STRATEGIST_AGENT_ID
@@ -32,6 +33,7 @@ from foundora.models import (
     AgentRun,
     AgentSkillAssignment,
     AgentVersion,
+    ApprovedBusinessStrategy,
     ModelGatewayCall,
     Skill,
     SkillVersion,
@@ -72,6 +74,10 @@ class ResearchSearchUnavailable(Exception):
 
 
 class StrategyEvidenceInvalid(Exception):
+    pass
+
+
+class ProductOfferEvidenceInvalid(Exception):
     pass
 
 
@@ -485,6 +491,48 @@ class AgentService:
             structured_input["strategy_evidence"] = {
                 "approved_fact_refs": approved_fact_refs,
                 "research_runs": pinned_runs,
+            }
+        if agent.id == PRODUCT_OFFER_AGENT_ID:
+            async with self._session_factory() as database:
+                approved_strategy = await database.get(ApprovedBusinessStrategy, business.id)
+            if approved_strategy is None:
+                raise ProductOfferEvidenceInvalid
+            strategy_refs = strategy_item_references(
+                approved_strategy.strategy, business.id, approved_strategy.version
+            )
+            if not strategy_refs:
+                raise ProductOfferEvidenceInvalid
+            sources = compiled_context.get("sources")
+            source_items = sources if isinstance(sources, list) else []
+            pinned_context_strategy = next(
+                (
+                    item
+                    for item in source_items
+                    if isinstance(item, dict)
+                    and item.get("authority") == "founder_approved_strategy"
+                ),
+                None,
+            )
+            pinned_content = (
+                pinned_context_strategy.get("content")
+                if isinstance(pinned_context_strategy, dict)
+                else None
+            )
+            if (
+                not isinstance(pinned_context_strategy, dict)
+                or pinned_context_strategy.get("source_version") != str(approved_strategy.version)
+                or not isinstance(pinned_content, dict)
+                or pinned_content.get("source_agent_run_id")
+                != str(approved_strategy.source_agent_run_id)
+                or pinned_content.get("strategy") != approved_strategy.strategy
+            ):
+                raise ProductOfferEvidenceInvalid
+            structured_input["offer_evidence"] = {
+                "strategy_version": approved_strategy.version,
+                "strategy_source_agent_run_id": str(approved_strategy.source_agent_run_id),
+                "strategy_context_id": approved_strategy.context_id,
+                "strategy_item_refs": sorted(strategy_refs),
+                "approved_strategy": approved_strategy.strategy,
             }
         evidence: list[SearchEvidence] = []
         if normalized_research_query is not None:
