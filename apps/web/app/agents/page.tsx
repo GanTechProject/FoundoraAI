@@ -24,6 +24,11 @@ const updates: Record<string, string> = {
 };
 
 const terminal = new Set(["completed", "failed", "cancelled"]);
+const researchAgents = new Set([
+  "market-research",
+  "competitor-intelligence",
+  "customer-research",
+]);
 
 function timestamp(value: string | null): string {
   if (!value) return "-";
@@ -64,8 +69,10 @@ export default async function AgentsPage({
           <p className="lede">
             Agent and skill contracts are immutable and version-pinned. The
             Founder/CEO and Chief-of-Staff produce grounded, proposed plans with
-            source traceability; they cannot execute tools, create tasks, grant
-            approvals, spend, or claim a delegation occurred.
+            source traceability. Research specialists analyze only explicitly
+            retrieved, founder-registered evidence and flag unsupported claims.
+            None can execute tools, create tasks, grant approvals, spend, or
+            claim a delegation occurred.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -219,6 +226,33 @@ export default async function AgentsPage({
                     rows={3}
                     required
                   />
+                  {researchAgents.has(definition.agent_id) ? (
+                    <>
+                      <label htmlFor={`research-${definition.agent_id}`}>
+                        Evidence search query
+                      </label>
+                      <textarea
+                        id={`research-${definition.agent_id}`}
+                        name="research_query"
+                        defaultValue={
+                          definition.agent_id === "market-research"
+                            ? "What cited market trends and demand signals are present for this business?"
+                            : definition.agent_id === "competitor-intelligence"
+                              ? "Which competitors are explicitly named, and what cited positioning, pricing, features, or whitespace are documented?"
+                              : "What cited ICP, jobs-to-be-done, pain points, buying triggers, and objections are documented?"
+                        }
+                        minLength={1}
+                        maxLength={500}
+                        rows={3}
+                        required
+                      />
+                      <p className="form-help">
+                        Searches active evidence already registered under
+                        Knowledge. No public-web provider is configured or
+                        implied.
+                      </p>
+                    </>
+                  ) : null}
                   <label htmlFor={`skill-${definition.agent_id}`}>
                     Assigned skill
                   </label>
@@ -439,6 +473,66 @@ export default async function AgentsPage({
                       )}
                     </ul>
                   </details>
+                </article>
+              ) : null}
+              {selectedRun.research_trace ? (
+                <article className="panel">
+                  <p className="eyebrow">RESEARCH EVIDENCE TRACE</p>
+                  <h3>Exact sources supplied to the specialist</h3>
+                  <div className="agent-contract-grid">
+                    <div>
+                      <span>Search boundary</span>
+                      <strong>{selectedRun.research_trace.provider}</strong>
+                    </div>
+                    <div>
+                      <span>Validated output</span>
+                      <strong>
+                        {selectedRun.research_trace.output_validated
+                          ? "Runtime validation passed"
+                          : "No validated output yet"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Authority</span>
+                      <strong>Advisory only; nothing executed</strong>
+                    </div>
+                  </div>
+                  <p>{selectedRun.research_trace.query}</p>
+                  {selectedRun.research_trace.evidence.length ? (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Source</th>
+                            <th>Retrieved</th>
+                            <th>Evidence ID / integrity</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedRun.research_trace.evidence.map((item) => (
+                            <tr key={item.evidence_id}>
+                              <td>
+                                <strong>{item.source_title}</strong>
+                                <br />
+                                <code>{item.source}</code>
+                              </td>
+                              <td>{item.retrieval_date}</td>
+                              <td>
+                                <code>{item.evidence_id}</code>
+                                <br />
+                                <code>{item.content_sha256}</code>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="notice notice--warning">
+                      No matching registered evidence was retrieved. Any
+                      resulting claim must remain explicitly unsupported.
+                    </p>
+                  )}
                 </article>
               ) : null}
               {selectedRun.usage.attempts.length ? (

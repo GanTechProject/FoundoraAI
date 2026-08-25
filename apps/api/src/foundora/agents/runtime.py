@@ -14,6 +14,7 @@ from foundora.agents.executive import (
     executive_prompt_constraints,
     validate_executive_output,
 )
+from foundora.agents.research import research_prompt_constraints, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.infrastructure.database import get_session_factory
 from foundora.model_gateway.service import GatewayRequest, GatewayResult, ModelGateway
@@ -259,8 +260,9 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
     system_prompt = (
         f"You are {claim.agent_id} version {claim.version}. Role: {claim.role}. "
         f"Purpose: {claim.purpose} You are read-only and must not perform or claim "
-        "external actions. Use only the supplied business context. Distinguish missing "
-        "facts from assumptions. Return only JSON matching the supplied schema. "
+        "external actions. Use only the supplied run input, including explicitly pinned "
+        "context or evidence. Distinguish missing facts from assumptions. Return only JSON "
+        "matching the supplied schema. "
         f"Forbidden actions: {json.dumps(claim.forbidden_actions, ensure_ascii=False)}"
     )
     if claim.skill_id is not None:
@@ -272,6 +274,7 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
             f"Evaluation rubric: {json.dumps(claim.skill_evaluation_rubric, ensure_ascii=False)}."
         )
     system_prompt += executive_prompt_constraints(claim.agent_id, claim.structured_input)
+    system_prompt += research_prompt_constraints(claim.agent_id, claim.structured_input)
     return GatewayRequest(
         task_type=task_type,
         prompt=json.dumps(claim.structured_input, ensure_ascii=False, sort_keys=True),
@@ -332,6 +335,7 @@ class AgentRuntime:
             output = cast(dict[str, object], raw_output)
             validate_schema(output, claim.output_schema)
             validate_executive_output(claim.agent_id, claim.structured_input, output)
+            validate_research_output(claim.agent_id, claim.structured_input, output)
             await self._repository.complete(run_id, output)
         except AgentSchemaError as error:
             await self._repository.fail(run_id, "agent_schema_invalid", str(error))

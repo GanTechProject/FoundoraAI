@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, and the Phase 15 executive agents.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, executive planning, and the Phase 16 source-backed research agents.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -160,7 +160,19 @@ needs, priorities or dependency graph, and candidate specialist work. Both
 agents are R0 advisory-only, have no tools or assigned skills, and cannot create
 tasks or workflows, grant approval, spend, contact people, or claim delegation
 occurred. Explicit runs use the provider-independent model gateway; unavailable
-providers fail honestly. The schema head is `20260825_15`.
+providers fail honestly.
+
+The registry also includes `market-research@1`,
+`competitor-intelligence@1`, and `customer-research@1`. Each explicit run first
+uses the provider-neutral `SearchProvider` boundary to retrieve selected-business
+evidence, then pins its exact source, retrieval date, excerpt, and integrity hash
+before model execution. The default `RegisteredKnowledgeSearchProvider` searches
+only active, founder-registered Phase 13 knowledge; no public-web search vendor is
+configured or implied. Supported findings must reproduce exact pinned citations.
+Unsupported claims remain visibly flagged with confidence and limitations, and a
+competitor name cannot be returned as supported unless it occurs in cited
+evidence. All three agents are manual R0 advisors with no model-invoked tools or
+side effects. The schema head is `20260825_16`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -180,7 +192,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, and executive-contract smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 themselves make no provider call; Phase 15 calls a model only when the founder explicitly queues an executive run. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, and source-backed research smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phase 15 and Phase 16 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider smoke itself is local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external

@@ -311,6 +311,7 @@ export async function runAgent(formData: FormData): Promise<never> {
         objective: field(formData, "objective"),
         skill_id: skillId || null,
         skill_input: skillInput,
+        research_query: field(formData, "research_query") || null,
       },
     );
   } catch {

@@ -117,6 +117,21 @@ export interface AgentRun {
     output_context_matches: boolean;
     advisory_only: true;
   } | null;
+  research_trace: {
+    provider: string;
+    query: string;
+    evidence: Array<{
+      evidence_id: string;
+      source: string;
+      source_title: string;
+      retrieval_date: string;
+      retrieved_at: string;
+      excerpt: string;
+      content_sha256: string;
+    }>;
+    output_validated: boolean;
+    advisory_only: true;
+  } | null;
 }
 
 export interface AgentDashboard {

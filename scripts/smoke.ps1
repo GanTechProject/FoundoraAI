@@ -1601,6 +1601,67 @@ Quasar retention research shows founder-led design studios prefer predictable an
     }
     Write-Output "Phase 15 executive contract smoke passed"
 
+    # Phase 16 search is deterministic and performs no model-provider call.
+    $phase16Dashboard = $phase15Dashboard
+    $phase16AgentIds = @(
+        "market-research",
+        "competitor-intelligence",
+        "customer-research"
+    )
+    foreach ($researchAgentId in $phase16AgentIds) {
+        $researchAgent = $phase16Dashboard.definitions | Where-Object {
+            $_.agent_id -eq $researchAgentId
+        } | Select-Object -First 1
+        if (-not $researchAgent -or `
+                $researchAgent.version -ne 1 -or `
+                $researchAgent.risk_level -ne "R0" -or `
+                $researchAgent.maximum_autonomy -ne "manual_advisory_only" -or `
+                @($researchAgent.allowed_tools).Count -ne 0 -or `
+                @($researchAgent.allowed_skills).Count -ne 0 -or `
+                @($researchAgent.assigned_skills).Count -ne 0 -or `
+                $researchAgent.data_access_scope.research_evidence -ne `
+                    "explicit_search_provider_results_only" -or `
+                @($researchAgent.output_schema.required) -notcontains "findings" -or `
+                @($researchAgent.output_schema.required) -notcontains `
+                    "overall_limitations") {
+            throw "Phase 16 research contract can exceed its source-backed advisory boundary"
+        }
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/agents/research/search" `
+            -Method Post -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{ query = "Quasar retention research" } | ConvertTo-Json -Compress)
+    }
+    $phase16Search = Invoke-RestMethod `
+        -Uri "$smokeApiOrigin/agents/research/search" -Method Post `
+        -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = $csrfCookie.Value } `
+        -ContentType "application/json" -WebSession $ownerSession `
+        -Body (@{ query = "Quasar retention research" } | ConvertTo-Json -Compress)
+    $phase16Evidence = $phase16Search.evidence | Where-Object {
+        $_.source -eq "https://example.com/beta-research"
+    } | Select-Object -First 1
+    if ($phase16Search.provider -ne "registered_knowledge" -or `
+            $phase16Search.query -ne "Quasar retention research" -or `
+            -not $phase16Evidence -or `
+            $phase16Evidence.source_title -ne "Beta founder research" -or `
+            $phase16Evidence.retrieval_date -notmatch '^\d{4}-\d{2}-\d{2}$' -or `
+            $phase16Evidence.evidence_id -notmatch `
+                '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or `
+            $phase16Evidence.content_sha256 -notmatch '^[0-9a-f]{64}$' -or `
+            -not ([string]$phase16Evidence.excerpt).Contains("Quasar retention research")) {
+        throw "Phase 16 SearchProvider did not return exact durable source evidence"
+    }
+    if (-not $phase15AgentsPage.Content.Contains("Market Research Agent") -or `
+            -not $phase15AgentsPage.Content.Contains("Competitor Intelligence Agent") -or `
+            -not $phase15AgentsPage.Content.Contains("Customer Research Agent") -or `
+            -not $phase15AgentsPage.Content.Contains("Evidence search query") -or `
+            -not $phase15AgentsPage.Content.Contains("No public-web provider is configured")) {
+        throw "Phase 16 protected research registry UI did not render"
+    }
+    Write-Output "Phase 16 research contract and SearchProvider smoke passed"
+
     $gatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
         -WebSession $ownerSession
     $openAiStatus = $gatewayDashboard.providers | `
@@ -1728,7 +1789,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
         $_.agent_id -eq "chief-of-staff-planning"
     } | Select-Object -First 1
     if ($agentDashboard.business_id -ne $businessBId -or `
-            $agentDashboard.definitions.Count -ne 3 -or `
+            $agentDashboard.definitions.Count -ne 6 -or `
             -not $verificationAgent -or `
             $verificationAgent.version -ne 2 -or `
             $verificationAgent.risk_level -ne "R0" -or `
@@ -2089,8 +2150,8 @@ Quasar retention research shows founder-led design studios prefer predictable an
 
     $smokeVersion = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT version_num FROM alembic_version"
-    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_15") {
-        throw "Isolated executive-agent migration is not current"
+    if ($LASTEXITCODE -ne 0 -or $smokeVersion.Trim() -ne "20260825_16") {
+        throw "Isolated research-agent migration is not current"
     }
     $ownerCount = docker compose exec -T postgres psql -U foundora -d $smokeDatabase `
         -tAc "SELECT count(*) FROM owners WHERE singleton_key = 1 AND position('argon2id' in password_hash) = 2"
@@ -2130,6 +2191,12 @@ Quasar retention research shows founder-led design studios prefer predictable an
         "SELECT (SELECT count(*) FROM agents WHERE id IN ('founder-ceo', 'chief-of-staff-planning') AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id IN ('founder-ceo', 'chief-of-staff-planning') AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0)"
     if ($LASTEXITCODE -ne 0 -or $executiveEvidence.Trim() -ne "2|2") {
         throw "Phase 15 immutable advisory executive contracts are incorrect"
+    }
+    $researchEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM agents WHERE id IN ('market-research', 'competitor-intelligence', 'customer-research') AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id IN ('market-research', 'competitor-intelligence', 'customer-research') AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0 AND data_access_scope->>'research_evidence' = 'explicit_search_provider_results_only')"
+    if ($LASTEXITCODE -ne 0 -or $researchEvidence.Trim() -ne "3|3") {
+        throw "Phase 16 immutable source-backed research contracts are incorrect"
     }
     $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `
@@ -2284,6 +2351,9 @@ finally {
     $phase15CsrfCookie = $null
     $phase15AgentsPage = $null
     $phase15WebSession = $null
+    $phase16Dashboard = $null
+    $phase16Search = $null
+    $phase16Evidence = $null
 }
 
 $webResponse = Invoke-WebRequest -UseBasicParsing -Uri "$publicOrigin/login"
@@ -2306,8 +2376,8 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_15") {
-    throw "Executive-agent migration is not current"
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260825_16") {
+    throw "Research-agent migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
 

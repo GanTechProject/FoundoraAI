@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
 from redis import Redis
@@ -14,6 +14,7 @@ from rq.job import JobStatus
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from foundora.agents.research import RESEARCH_AGENT_IDS
 from foundora.agents.schema import validate_schema
 from foundora.auth.service import AuthContext
 from foundora.business.context import resolve_selected_business
@@ -34,6 +35,12 @@ from foundora.models import (
     Skill,
     SkillVersion,
 )
+from foundora.search.provider import (
+    RegisteredKnowledgeSearchProvider,
+    SearchEvidence,
+    SearchProvider,
+    SearchRequest,
+)
 
 logger = logging.getLogger(__name__)
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
@@ -52,6 +59,14 @@ class AgentRunNotCancellable(Exception):
 
 
 class SkillNotAssigned(Exception):
+    pass
+
+
+class ResearchQueryInvalid(Exception):
+    pass
+
+
+class ResearchSearchUnavailable(Exception):
     pass
 
 
@@ -89,6 +104,13 @@ class AgentDashboard:
     definitions: list[AgentDefinitionRecord]
     skills: list[SkillDefinitionRecord]
     runs: list[AgentRunRecord]
+
+
+@dataclass(frozen=True)
+class ResearchSearchRecord:
+    provider: str
+    query: str
+    evidence: list[SearchEvidence]
 
 
 def _now() -> datetime:
@@ -143,11 +165,42 @@ class AgentService:
         self,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         context_service: ContextService | None = None,
+        search_provider: SearchProvider | None = None,
         enqueue: Callable[[uuid.UUID], Awaitable[None]] = enqueue_agent_run,
     ) -> None:
         self._session_factory = session_factory or get_session_factory()
         self._context_service = context_service or ContextService(self._session_factory)
+        self._search_provider = search_provider or RegisteredKnowledgeSearchProvider(
+            self._session_factory
+        )
         self._enqueue = enqueue
+
+    async def search_research_evidence(
+        self, context: AuthContext, query: str
+    ) -> ResearchSearchRecord:
+        normalized_query = " ".join(query.strip().split())
+        if not normalized_query or len(normalized_query) > 500:
+            raise ResearchQueryInvalid
+        async with self._session_factory() as database:
+            business = await resolve_selected_business(database, context)
+        try:
+            evidence = await self._search_provider.search(
+                SearchRequest(business_id=business.id, query=normalized_query)
+            )
+        except Exception as error:
+            logger.exception(
+                "Research evidence preview failed",
+                extra={
+                    "event": "agent.research.preview_failed",
+                    "business_id": str(business.id),
+                },
+            )
+            raise ResearchSearchUnavailable from error
+        return ResearchSearchRecord(
+            provider=self._search_provider.provider_id,
+            query=normalized_query,
+            evidence=evidence,
+        )
 
     async def dashboard(self, context: AuthContext) -> AgentDashboard:
         async with self._session_factory() as database:
@@ -256,6 +309,7 @@ class AgentService:
         objective: str,
         skill_id: str | None = None,
         skill_input: dict[str, object] | None = None,
+        research_query: str | None = None,
     ) -> AgentRunRecord:
         skill_version: SkillVersion | None = None
         normalized_skill_input = skill_input or {}
@@ -309,6 +363,15 @@ class AgentService:
             elif normalized_skill_input:
                 raise SkillNotAssigned
 
+        normalized_research_query = (
+            " ".join(research_query.strip().split()) if research_query is not None else None
+        )
+        if agent.id in RESEARCH_AGENT_IDS:
+            if not normalized_research_query or len(normalized_research_query) > 500:
+                raise ResearchQueryInvalid
+        elif normalized_research_query is not None:
+            raise ResearchQueryInvalid
+
         policy = version.model_policy
         context_budget = policy.get("context_token_budget")
         if not isinstance(context_budget, int) or isinstance(context_budget, bool):
@@ -334,6 +397,30 @@ class AgentService:
             "context_id": business_context.context_id,
             "context_sha256": business_context.context_sha256,
         }
+        evidence: list[SearchEvidence] = []
+        if normalized_research_query is not None:
+            try:
+                evidence = await self._search_provider.search(
+                    SearchRequest(
+                        business_id=business.id,
+                        query=normalized_research_query,
+                    )
+                )
+            except Exception as error:
+                logger.exception(
+                    "Research evidence search failed",
+                    extra={
+                        "event": "agent.research.search_failed",
+                        "agent_id": agent.id,
+                        "business_id": str(business.id),
+                    },
+                )
+                raise ResearchSearchUnavailable from error
+            structured_input["research"] = {
+                "provider": self._search_provider.provider_id,
+                "query": normalized_research_query,
+                "evidence": [asdict(item) for item in evidence],
+            }
         if skill_version is not None:
             structured_input["skill"] = {
                 "skill_id": skill_version.skill_id,
@@ -373,6 +460,10 @@ class AgentService:
                 "context_id": business_context.context_id,
                 "skill_id": skill_version.skill_id if skill_version is not None else None,
                 "skill_input": normalized_skill_input if skill_version is not None else None,
+                "research_query": normalized_research_query,
+                "research_evidence_count": (
+                    len(evidence) if normalized_research_query is not None else None
+                ),
             },
             created_at=now,
         )

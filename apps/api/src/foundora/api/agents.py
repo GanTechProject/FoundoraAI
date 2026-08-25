@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 
 from foundora.agents.executive import EXECUTIVE_AGENT_IDS
+from foundora.agents.research import RESEARCH_AGENT_IDS
 from foundora.agents.schema import AgentSchemaError
 from foundora.agents.service import (
     AgentDashboard,
@@ -18,6 +19,9 @@ from foundora.agents.service import (
     AgentRunNotFound,
     AgentRunRecord,
     AgentService,
+    ResearchQueryInvalid,
+    ResearchSearchRecord,
+    ResearchSearchUnavailable,
     SkillDefinitionRecord,
     SkillNotAssigned,
 )
@@ -40,6 +44,7 @@ class CreateAgentRunRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=500)
     skill_id: str | None = Field(default=None, min_length=1, max_length=80)
     skill_input: dict[str, object] = Field(default_factory=dict)
+    research_query: str | None = Field(default=None, max_length=500)
 
     @field_validator("objective")
     @classmethod
@@ -48,6 +53,14 @@ class CreateAgentRunRequest(BaseModel):
         if not cleaned:
             raise ValueError("objective cannot be blank")
         return cleaned
+
+    @field_validator("research_query")
+    @classmethod
+    def clean_research_query(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.strip().split())
+        return cleaned or None
 
 
 class AgentDefinitionView(BaseModel):
@@ -138,6 +151,42 @@ class ExecutivePlanTraceView(BaseModel):
     advisory_only: Literal[True] = True
 
 
+class ResearchEvidenceView(BaseModel):
+    evidence_id: str
+    source: str
+    source_title: str
+    retrieval_date: str
+    retrieved_at: str
+    excerpt: str
+    content_sha256: str
+
+
+class ResearchTraceView(BaseModel):
+    provider: str
+    query: str
+    evidence: list[ResearchEvidenceView]
+    output_validated: bool
+    advisory_only: Literal[True] = True
+
+
+class ResearchSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+
+    @field_validator("query")
+    @classmethod
+    def clean_query(cls, value: str) -> str:
+        cleaned = " ".join(value.strip().split())
+        if not cleaned:
+            raise ValueError("query cannot be blank")
+        return cleaned
+
+
+class ResearchSearchView(BaseModel):
+    provider: str
+    query: str
+    evidence: list[ResearchEvidenceView]
+
+
 class AgentRunView(BaseModel):
     id: uuid.UUID
     business_id: uuid.UUID
@@ -163,6 +212,7 @@ class AgentRunView(BaseModel):
     messages: list[AgentMessageView]
     usage: AgentUsageView
     executive_plan_trace: ExecutivePlanTraceView | None
+    research_trace: ResearchTraceView | None
 
 
 class AgentDashboardView(BaseModel):
@@ -279,6 +329,28 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
                 source_references=source_references,
                 output_context_matches=output_context_id == context_id,
             )
+    research_trace: ResearchTraceView | None = None
+    if run.agent_id in RESEARCH_AGENT_IDS:
+        research = run.structured_input.get("research")
+        if isinstance(research, dict):
+            provider = research.get("provider")
+            query = research.get("query")
+            evidence = research.get("evidence")
+            if isinstance(provider, str) and isinstance(query, str) and isinstance(evidence, list):
+                evidence_views: list[ResearchEvidenceView] = []
+                for item in evidence:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        evidence_views.append(ResearchEvidenceView.model_validate(item))
+                    except ValueError:
+                        continue
+                research_trace = ResearchTraceView(
+                    provider=provider,
+                    query=query,
+                    evidence=evidence_views,
+                    output_validated=run.status == "completed",
+                )
     return AgentRunView(
         id=run.id,
         business_id=run.business_id,
@@ -318,6 +390,7 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
             attempts=attempts,
         ),
         executive_plan_trace=trace,
+        research_trace=research_trace,
     )
 
 
@@ -327,6 +400,17 @@ def _dashboard_view(dashboard: AgentDashboard) -> AgentDashboardView:
         definitions=[_definition_view(record) for record in dashboard.definitions],
         skills=[_skill_view(record) for record in dashboard.skills],
         runs=[_run_view(record) for record in dashboard.runs],
+    )
+
+
+def _research_search_view(record: ResearchSearchRecord) -> ResearchSearchView:
+    return ResearchSearchView(
+        provider=record.provider,
+        query=record.query,
+        evidence=[
+            ResearchEvidenceView.model_validate(item, from_attributes=True)
+            for item in record.evidence
+        ],
     )
 
 
@@ -341,6 +425,31 @@ async def agent_dashboard(
     dashboard = await AgentService().dashboard(context)
     response.headers["Cache-Control"] = "no-store"
     return _dashboard_view(dashboard)
+
+
+@router.post("/research/search", response_model=ResearchSearchView)
+async def preview_research_evidence(
+    payload: ResearchSearchRequest,
+    context: Annotated[AuthContext, Depends(require_csrf)],
+    response: Response,
+) -> ResearchSearchView:
+    try:
+        record = await AgentService().search_research_evidence(context, payload.query)
+    except ResearchQueryInvalid as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_research_query", "message": "Search query is invalid"},
+        ) from error
+    except ResearchSearchUnavailable as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "research_search_unavailable",
+                "message": "The registered-knowledge search boundary is unavailable",
+            },
+        ) from error
+    response.headers["Cache-Control"] = "no-store"
+    return _research_search_view(record)
 
 
 @router.post(
@@ -360,6 +469,7 @@ async def create_agent_run(
             payload.objective,
             payload.skill_id,
             payload.skill_input,
+            payload.research_query,
         )
     except AgentNotFound as error:
         raise HTTPException(
@@ -378,6 +488,25 @@ async def create_agent_run(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "invalid_skill_input", "message": str(error)},
+        ) from error
+    except ResearchQueryInvalid as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_research_query",
+                "message": (
+                    "Research agents require a 1 to 500 character query; "
+                    "other agents do not accept one"
+                ),
+            },
+        ) from error
+    except ResearchSearchUnavailable as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "research_search_unavailable",
+                "message": "The registered-knowledge search boundary is unavailable",
+            },
         ) from error
     except AgentQueueUnavailable as error:
         raise HTTPException(
