@@ -1,6 +1,6 @@
 # Foundora
 
-Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, executive planning, and the Phase 16 source-backed research agents.
+Foundora is an owner-operated AI business launch and operating system. The current implementation includes the portable runtime, secure single-owner authentication, multi-business workspace, founder-approved onboarding, the provider-independent model gateway, the provenance-first business brain, the versioned agent and skill runtime, the durable task and workflow engines, the policy, risk, and approval engine, the internal event bus, provider-neutral knowledge retrieval, curated memory, executive planning, source-backed research agents, and founder-approved evidence-linked business strategy.
 
 No deployment provider has been selected. The application contains no AWS-, Azure-, Vercel-, Railway-, Render-, or other provider-specific runtime architecture.
 
@@ -172,7 +172,18 @@ configured or implied. Supported findings must reproduce exact pinned citations.
 Unsupported claims remain visibly flagged with confidence and limitations, and a
 competitor name cannot be returned as supported unless it occurs in cited
 evidence. All three agents are manual R0 advisors with no model-invoked tools or
-side effects. The schema head is `20260825_16`.
+side effects.
+
+The registry also includes `business-strategist@1`. A strategist run requires
+one completed, validated, supported run from each Phase 16 research specialist
+and founder-approved facts in its selected-business context. It proposes all
+nine Phase 17 artifacts, and every item must reproduce exact approved-fact and
+supported-finding references. Pricing remains a hypothesis and assumptions state
+how they require validation. Open `/strategy` to review completed proposals and
+explicitly approve one with optimistic version protection. Approval creates the
+versioned `approved_strategy` Business Brain source and a transactional audit
+event; the agent cannot self-approve or execute the strategy. The schema head is
+`20260825_17`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -192,7 +203,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, and source-backed research smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phase 15 and Phase 16 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider smoke itself is local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, and strategy approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 17 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17 strategy contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external

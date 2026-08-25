@@ -24,7 +24,9 @@ from foundora.agents.service import (
     ResearchSearchUnavailable,
     SkillDefinitionRecord,
     SkillNotAssigned,
+    StrategyEvidenceInvalid,
 )
+from foundora.agents.strategy import BUSINESS_STRATEGIST_AGENT_ID, evidence_allowlists
 from foundora.api.auth import require_auth, require_csrf
 from foundora.auth.service import AuthContext
 
@@ -45,6 +47,7 @@ class CreateAgentRunRequest(BaseModel):
     skill_id: str | None = Field(default=None, min_length=1, max_length=80)
     skill_input: dict[str, object] = Field(default_factory=dict)
     research_query: str | None = Field(default=None, max_length=500)
+    research_run_ids: list[uuid.UUID] = Field(default_factory=list, max_length=3)
 
     @field_validator("objective")
     @classmethod
@@ -169,6 +172,13 @@ class ResearchTraceView(BaseModel):
     advisory_only: Literal[True] = True
 
 
+class StrategyTraceView(BaseModel):
+    approved_fact_refs: list[str]
+    research_finding_refs: list[str]
+    output_context_matches: bool
+    proposed_only: Literal[True] = True
+
+
 class ResearchSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
 
@@ -213,6 +223,7 @@ class AgentRunView(BaseModel):
     usage: AgentUsageView
     executive_plan_trace: ExecutivePlanTraceView | None
     research_trace: ResearchTraceView | None
+    strategy_trace: StrategyTraceView | None
 
 
 class AgentDashboardView(BaseModel):
@@ -351,6 +362,21 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
                     evidence=evidence_views,
                     output_validated=run.status == "completed",
                 )
+    strategy_trace: StrategyTraceView | None = None
+    if run.agent_id == BUSINESS_STRATEGIST_AGENT_ID:
+        try:
+            approved_refs, research_refs = evidence_allowlists(run.structured_input)
+            strategy_trace = StrategyTraceView(
+                approved_fact_refs=sorted(approved_refs),
+                research_finding_refs=sorted(research_refs),
+                output_context_matches=(
+                    isinstance(run.structured_output, dict)
+                    and run.structured_output.get("context_id")
+                    == run.structured_input.get("context_id")
+                ),
+            )
+        except AgentSchemaError:
+            strategy_trace = None
     return AgentRunView(
         id=run.id,
         business_id=run.business_id,
@@ -391,6 +417,7 @@ def _run_view(record: AgentRunRecord) -> AgentRunView:
         ),
         executive_plan_trace=trace,
         research_trace=research_trace,
+        strategy_trace=strategy_trace,
     )
 
 
@@ -470,6 +497,7 @@ async def create_agent_run(
             payload.skill_id,
             payload.skill_input,
             payload.research_query,
+            payload.research_run_ids,
         )
     except AgentNotFound as error:
         raise HTTPException(
@@ -506,6 +534,17 @@ async def create_agent_run(
             detail={
                 "code": "research_search_unavailable",
                 "message": "The registered-knowledge search boundary is unavailable",
+            },
+        ) from error
+    except StrategyEvidenceInvalid as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_strategy_evidence",
+                "message": (
+                    "Business strategy requires one completed, validated, supported run from "
+                    "each Phase 16 research specialist plus founder-approved business facts"
+                ),
             },
         ) from error
     except AgentQueueUnavailable as error:

@@ -22,5 +22,6 @@
 | [ADR-0018](ADR-0018-provider-neutral-knowledge-retrieval.md) | Provider-neutral knowledge ingestion and pgvector retrieval | Accepted |
 | [ADR-0019](ADR-0019-curated-provenance-first-memory.md) | Curated, provenance-first memory with explicit fact authority | Accepted |
 | [ADR-0020](ADR-0020-traceable-advisory-executive-agents.md) | Traceable advisory executive agents with no execution authority | Accepted |
+| [ADR-0021](ADR-0021-founder-approved-evidence-linked-strategy.md) | Founder-approved, evidence-linked business strategy | Accepted |
 
 Future decisions should use the next sequential number and record context, decision, consequences, and supersession links.

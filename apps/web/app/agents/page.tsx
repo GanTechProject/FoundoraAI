@@ -71,8 +71,10 @@ export default async function AgentsPage({
             Founder/CEO and Chief-of-Staff produce grounded, proposed plans with
             source traceability. Research specialists analyze only explicitly
             retrieved, founder-registered evidence and flag unsupported claims.
-            None can execute tools, create tasks, grant approvals, spend, or
-            claim a delegation occurred.
+            The Business Strategist consumes one completed supported run from
+            each research role and ties every proposed artifact to approved
+            facts. None can execute tools, create tasks, grant approvals, spend,
+            or claim a delegation occurred.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -81,6 +83,9 @@ export default async function AgentsPage({
           </Link>
           <Link className="text-link" href="/brain">
             Business brain
+          </Link>
+          <Link className="text-link" href="/strategy">
+            Strategy
           </Link>
           <Link className="text-link" href="/tasks">
             Task engine
@@ -252,6 +257,50 @@ export default async function AgentsPage({
                         implied.
                       </p>
                     </>
+                  ) : null}
+                  {definition.agent_id === "business-strategist" ? (
+                    <fieldset>
+                      <legend>Required completed research evidence</legend>
+                      {[...researchAgents].map((researchAgentId) => {
+                        const candidates = dashboard.runs.filter(
+                          (run) =>
+                            run.agent_id === researchAgentId &&
+                            run.status === "completed",
+                        );
+                        return (
+                          <div key={researchAgentId}>
+                            <label
+                              htmlFor={`strategy-evidence-${researchAgentId}`}
+                            >
+                              {researchAgentId}
+                            </label>
+                            {candidates.length ? (
+                              <select
+                                id={`strategy-evidence-${researchAgentId}`}
+                                name="research_run_ids"
+                                required
+                                defaultValue={candidates[0].id}
+                              >
+                                {candidates.map((run) => (
+                                  <option key={run.id} value={run.id}>
+                                    {timestamp(run.completed_at)} UTC — {run.id}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <p className="notice notice--warning">
+                                Complete a supported {researchAgentId} run
+                                first.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <p className="form-help">
+                        The newest completed run for each specialist is pinned.
+                        Strategy remains proposed until separately approved.
+                      </p>
+                    </fieldset>
                   ) : null}
                   <label htmlFor={`skill-${definition.agent_id}`}>
                     Assigned skill

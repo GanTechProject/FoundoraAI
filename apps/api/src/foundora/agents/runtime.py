@@ -16,6 +16,7 @@ from foundora.agents.executive import (
 )
 from foundora.agents.research import research_prompt_constraints, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
+from foundora.agents.strategy import strategy_prompt_constraints, validate_strategy_output
 from foundora.infrastructure.database import get_session_factory
 from foundora.model_gateway.service import GatewayRequest, GatewayResult, ModelGateway
 from foundora.model_gateway.types import GatewayError
@@ -275,6 +276,7 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
         )
     system_prompt += executive_prompt_constraints(claim.agent_id, claim.structured_input)
     system_prompt += research_prompt_constraints(claim.agent_id, claim.structured_input)
+    system_prompt += strategy_prompt_constraints(claim.agent_id, claim.structured_input)
     return GatewayRequest(
         task_type=task_type,
         prompt=json.dumps(claim.structured_input, ensure_ascii=False, sort_keys=True),
@@ -336,6 +338,7 @@ class AgentRuntime:
             validate_schema(output, claim.output_schema)
             validate_executive_output(claim.agent_id, claim.structured_input, output)
             validate_research_output(claim.agent_id, claim.structured_input, output)
+            validate_strategy_output(claim.agent_id, claim.structured_input, output)
             await self._repository.complete(run_id, output)
         except AgentSchemaError as error:
             await self._repository.fail(run_id, "agent_schema_invalid", str(error))

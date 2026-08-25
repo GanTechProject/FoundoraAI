@@ -1088,7 +1088,7 @@ Quasar retention research shows founder-led design studios prefer predictable an
     }
     $eventDeliveries = @($eventDashboard.events | ForEach-Object { $_.deliveries })
     if ($eventDashboard.business_id -ne $businessBId -or `
-            $eventDashboard.contracts.Count -ne 13 -or `
+            $eventDashboard.contracts.Count -ne 14 -or `
             @($eventDeliveries | Where-Object {
                 $_.status -ne "completed" -or $_.attempt_count -ne 1
             }).Count -ne 0) {
@@ -1662,6 +1662,78 @@ Quasar retention research shows founder-led design studios prefer predictable an
     }
     Write-Output "Phase 16 research contract and SearchProvider smoke passed"
 
+    # Phase 17 is deterministic here: inspect contracts and reject ungrounded
+    # strategy creation without making a model-provider call.
+    $phase17Strategist = $phase16Dashboard.definitions | Where-Object {
+        $_.agent_id -eq "business-strategist"
+    } | Select-Object -First 1
+    $phase17RequiredArtifacts = @(
+        "opportunity_assessment",
+        "value_proposition",
+        "business_model",
+        "pricing_hypotheses",
+        "positioning",
+        "go_to_market",
+        "launch_roadmap",
+        "risks",
+        "assumptions_requiring_validation"
+    )
+    if (-not $phase17Strategist -or `
+            $phase17Strategist.version -ne 1 -or `
+            $phase17Strategist.risk_level -ne "R0" -or `
+            $phase17Strategist.maximum_autonomy -ne "manual_advisory_only" -or `
+            @($phase17Strategist.allowed_tools).Count -ne 0 -or `
+            @($phase17Strategist.allowed_skills).Count -ne 0 -or `
+            $phase17Strategist.data_access_scope.research_evidence -ne `
+                "explicit_completed_phase_16_runs_only" -or `
+            @($phase17Strategist.input_schema.required) -notcontains `
+                "strategy_evidence") {
+        throw "Phase 17 strategist contract can exceed its evidence-bound advisory role"
+    }
+    foreach ($artifact in $phase17RequiredArtifacts) {
+        if (@($phase17Strategist.output_schema.required) -notcontains $artifact) {
+            throw "Phase 17 strategy schema is missing $artifact"
+        }
+    }
+    Assert-HttpStatus -ExpectedStatus 422 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/agents/business-strategist/runs" `
+            -Method Post `
+            -Headers @{
+                Origin = $smokePublicOrigin
+                "X-CSRF-Token" = $csrfCookie.Value
+            } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                    objective = "Propose an evidence-backed strategy"
+                    research_run_ids = @()
+                } | ConvertTo-Json -Depth 4 -Compress)
+    }
+    $phase17Dashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/strategy" `
+        -WebSession $ownerSession
+    if ($phase17Dashboard.current_version -ne 0 -or `
+            $phase17Dashboard.approved -or `
+            @($phase17Dashboard.candidate_runs).Count -ne 0) {
+        throw "Phase 17 approval domain did not begin in an explicit unapproved state"
+    }
+    Assert-HttpStatus -ExpectedStatus 403 -Request {
+        Invoke-WebRequest -UseBasicParsing `
+            -Uri "$smokeApiOrigin/strategy/approve" -Method Post `
+            -Headers @{ Origin = $smokePublicOrigin; "X-CSRF-Token" = "" } `
+            -ContentType "application/json" -WebSession $ownerSession `
+            -Body (@{
+                    run_id = "00000000-0000-0000-0000-000000001701"
+                    expected_version = 0
+                } | ConvertTo-Json -Compress)
+    }
+    $phase17Page = Invoke-WebRequest -UseBasicParsing `
+        -Uri "$smokePublicOrigin/strategy" -WebSession $phase15WebSession
+    if (-not $phase17Page.Content.Contains("Evidence first, founder approval second") -or `
+            -not $phase17Page.Content.Contains("Not approved yet")) {
+        throw "Phase 17 protected strategy review UI did not render"
+    }
+    Write-Output "Phase 17 strategy contract and approval-boundary smoke passed"
+
     $gatewayDashboard = Invoke-RestMethod -Uri "$smokeApiOrigin/ai" `
         -WebSession $ownerSession
     $openAiStatus = $gatewayDashboard.providers | `
@@ -2197,6 +2269,12 @@ Quasar retention research shows founder-led design studios prefer predictable an
         "SELECT (SELECT count(*) FROM agents WHERE id IN ('market-research', 'competitor-intelligence', 'customer-research') AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id IN ('market-research', 'competitor-intelligence', 'customer-research') AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0 AND data_access_scope->>'research_evidence' = 'explicit_search_provider_results_only')"
     if ($LASTEXITCODE -ne 0 -or $researchEvidence.Trim() -ne "3|3") {
         throw "Phase 16 immutable source-backed research contracts are incorrect"
+    }
+    $strategyEvidence = docker compose exec -T postgres psql -U foundora `
+        -d $smokeDatabase -tAc `
+        "SELECT (SELECT count(*) FROM agents WHERE id = 'business-strategist' AND enabled = true AND current_version = 1) || '|' || (SELECT count(*) FROM agent_versions WHERE agent_id = 'business-strategist' AND risk_level = 'R0' AND maximum_autonomy = 'manual_advisory_only' AND json_array_length(allowed_tools) = 0 AND json_array_length(allowed_skills) = 0 AND data_access_scope->>'research_evidence' = 'explicit_completed_phase_16_runs_only') || '|' || (SELECT count(*) FROM approved_business_strategies)"
+    if ($LASTEXITCODE -ne 0 -or $strategyEvidence.Trim() -ne "1|1|0") {
+        throw "Phase 17 strategist or explicit approval-domain evidence is incorrect"
     }
     $taskEngineEvidence = docker compose exec -T postgres psql -U foundora `
         -d $smokeDatabase -tAc `

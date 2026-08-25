@@ -18,6 +18,7 @@ from foundora.knowledge.service import KnowledgeSearchHit, search_knowledge
 from foundora.memory.service import retrieve_memories
 from foundora.models import (
     ApprovedBusinessProfile,
+    ApprovedBusinessStrategy,
     BusinessGoal,
     BusinessPreference,
     MemoryProvenance,
@@ -37,6 +38,7 @@ SourceType = Literal[
     "current_tasks",
     "knowledge",
     "relevant_memories",
+    "approved_strategy",
 ]
 SourceValidity = Literal["current", "stale", "invalidated"]
 SelectionStatus = Literal["included", "excluded"]
@@ -53,10 +55,10 @@ SOURCE_TYPES: tuple[SourceType, ...] = (
     "current_tasks",
     "knowledge",
     "relevant_memories",
+    "approved_strategy",
 )
 
 FUTURE_SOURCE_TYPES: dict[str, str] = {
-    "approved_strategy": "No approved strategy domain exists before Phase 17.",
     "customers": "No customer domain exists before Phase 33.",
     "decisions": "No governed decision domain exists yet.",
     "kpis": "No KPI domain exists before Phase 40.",
@@ -255,6 +257,7 @@ class ContextService:
             if preferences is None:
                 raise NoSelectedBusiness
             approved = await database.get(ApprovedBusinessProfile, business.id)
+            approved_strategy = await database.get(ApprovedBusinessStrategy, business.id)
             goals = list(
                 await database.scalars(
                     select(BusinessGoal)
@@ -357,6 +360,12 @@ class ContextService:
                 unavailable[source_type] = reason
         else:
             candidates.extend(self._approved_candidates(approved))
+        if approved_strategy is None:
+            unavailable["approved_strategy"] = (
+                "No founder-approved business strategy exists for this business."
+            )
+        else:
+            candidates.append(self._approved_strategy_candidate(approved_strategy))
         candidates.extend(self._goal_candidates(goals))
         if not goals:
             unavailable["operational_goals"] = "No business goals are recorded."
@@ -387,6 +396,26 @@ class ContextService:
             request=request,
             candidates=candidates,
             unavailable_sources=unavailable,
+        )
+
+    @staticmethod
+    def _approved_strategy_candidate(
+        strategy: ApprovedBusinessStrategy,
+    ) -> ContextCandidate:
+        return ContextCandidate(
+            source_type="approved_strategy",
+            source_reference=f"approved_business_strategies/{strategy.business_id}",
+            source_version=str(strategy.version),
+            authority="founder_approved_strategy",
+            label=f"Founder-approved business strategy v{strategy.version}",
+            updated_at=strategy.approved_at,
+            validity="current",
+            content={
+                "source_agent_run_id": str(strategy.source_agent_run_id),
+                "context_id": strategy.context_id,
+                "strategy": strategy.strategy,
+                "evidence_refs": strategy.evidence_refs,
+            },
         )
 
     @staticmethod

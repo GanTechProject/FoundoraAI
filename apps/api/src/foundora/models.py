@@ -193,6 +193,29 @@ class ApprovedBusinessProfile(Base):
     approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class ApprovedBusinessStrategy(Base):
+    __tablename__ = "approved_business_strategies"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_approved_business_strategies_version"),
+        UniqueConstraint("source_agent_run_id", name="uq_approved_business_strategies_source_run"),
+    )
+
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), primary_key=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    source_agent_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="RESTRICT")
+    )
+    context_id: Mapped[str] = mapped_column(String(64))
+    strategy: Mapped[dict[str, object]] = mapped_column(JSON)
+    evidence_refs: Mapped[dict[str, object]] = mapped_column(JSON)
+    approved_by_owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("owners.id", ondelete="RESTRICT")
+    )
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Agent(Base):
     __tablename__ = "agents"
     __table_args__ = (CheckConstraint("current_version > 0", name="ck_agents_current_version"),)

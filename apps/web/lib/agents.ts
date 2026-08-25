@@ -132,6 +132,12 @@ export interface AgentRun {
     output_validated: boolean;
     advisory_only: true;
   } | null;
+  strategy_trace: {
+    approved_fact_refs: string[];
+    research_finding_refs: string[];
+    output_context_matches: boolean;
+    proposed_only: true;
+  } | null;
 }
 
 export interface AgentDashboard {

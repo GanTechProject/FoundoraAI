@@ -116,6 +116,29 @@ EVENT_CONTRACTS: Mapping[str, EventContract] = MappingProxyType(
                 ["approval_request_id", "action_id", "action_type", "risk_class"],
             ),
         ),
+        "strategy.approved": EventContract(
+            event_type="strategy.approved",
+            schema_version=1,
+            aggregate_type="business_strategy",
+            description="A validated proposed strategy received explicit founder approval.",
+            payload_schema=_schema(
+                {
+                    "business_id": {"type": "string", "format": "uuid"},
+                    "strategy_version": {"type": "integer", "minimum": 1},
+                    "source_agent_run_id": {"type": "string", "format": "uuid"},
+                    "context_id": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$",
+                    },
+                },
+                [
+                    "business_id",
+                    "strategy_version",
+                    "source_agent_run_id",
+                    "context_id",
+                ],
+            ),
+        ),
         "knowledge.source_registered": EventContract(
             event_type="knowledge.source_registered",
             schema_version=1,

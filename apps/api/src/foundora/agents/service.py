@@ -14,8 +14,9 @@ from rq.job import JobStatus
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from foundora.agents.research import RESEARCH_AGENT_IDS
-from foundora.agents.schema import validate_schema
+from foundora.agents.research import RESEARCH_AGENT_IDS, validate_research_output
+from foundora.agents.schema import AgentSchemaError, validate_schema
+from foundora.agents.strategy import BUSINESS_STRATEGIST_AGENT_ID
 from foundora.auth.service import AuthContext
 from foundora.business.context import resolve_selected_business
 from foundora.business_brain.service import (
@@ -67,6 +68,10 @@ class ResearchQueryInvalid(Exception):
 
 
 class ResearchSearchUnavailable(Exception):
+    pass
+
+
+class StrategyEvidenceInvalid(Exception):
     pass
 
 
@@ -310,6 +315,7 @@ class AgentService:
         skill_id: str | None = None,
         skill_input: dict[str, object] | None = None,
         research_query: str | None = None,
+        research_run_ids: list[uuid.UUID] | None = None,
     ) -> AgentRunRecord:
         skill_version: SkillVersion | None = None
         normalized_skill_input = skill_input or {}
@@ -372,6 +378,15 @@ class AgentService:
         elif normalized_research_query is not None:
             raise ResearchQueryInvalid
 
+        selected_research_run_ids = research_run_ids or []
+        if agent.id == BUSINESS_STRATEGIST_AGENT_ID:
+            if len(selected_research_run_ids) != len(RESEARCH_AGENT_IDS) or len(
+                set(selected_research_run_ids)
+            ) != len(RESEARCH_AGENT_IDS):
+                raise StrategyEvidenceInvalid
+        elif selected_research_run_ids:
+            raise StrategyEvidenceInvalid
+
         policy = version.model_policy
         context_budget = policy.get("context_token_budget")
         if not isinstance(context_budget, int) or isinstance(context_budget, bool):
@@ -397,6 +412,80 @@ class AgentService:
             "context_id": business_context.context_id,
             "context_sha256": business_context.context_sha256,
         }
+        if agent.id == BUSINESS_STRATEGIST_AGENT_ID:
+            sources = compiled_context.get("sources")
+            approved_fact_refs = (
+                sorted(
+                    {
+                        reference
+                        for item in sources
+                        if isinstance(sources, list)
+                        and isinstance(item, dict)
+                        and item.get("authority")
+                        in {"founder_approved_onboarding", "founder_approved_fact"}
+                        and isinstance((reference := item.get("source_reference")), str)
+                    }
+                )
+                if isinstance(sources, list)
+                else []
+            )
+            if not approved_fact_refs:
+                raise StrategyEvidenceInvalid
+            async with self._session_factory() as database:
+                research_rows = list(
+                    (
+                        await database.execute(
+                            select(AgentRun, AgentVersion)
+                            .join(AgentVersion, AgentVersion.id == AgentRun.agent_version_id)
+                            .where(
+                                AgentRun.id.in_(selected_research_run_ids),
+                                AgentRun.business_id == business.id,
+                                AgentRun.status == "completed",
+                                AgentRun.agent_id.in_(RESEARCH_AGENT_IDS),
+                            )
+                        )
+                    ).all()
+                )
+            if {run.agent_id for run, _ in research_rows} != set(RESEARCH_AGENT_IDS):
+                raise StrategyEvidenceInvalid
+            pinned_runs: list[dict[str, object]] = []
+            for research_run, research_version in sorted(
+                research_rows, key=lambda row: row[0].agent_id
+            ):
+                output = research_run.structured_output
+                if not isinstance(output, dict):
+                    raise StrategyEvidenceInvalid
+                try:
+                    validate_schema(research_run.structured_input, research_version.input_schema)
+                    validate_schema(output, research_version.output_schema)
+                    validate_research_output(
+                        research_run.agent_id, research_run.structured_input, output
+                    )
+                except AgentSchemaError as error:
+                    raise StrategyEvidenceInvalid from error
+                supported_refs = [
+                    f"agent_runs/{research_run.id}/findings/{finding.get('finding_id')}"
+                    for finding in output.get("findings", [])
+                    if isinstance(finding, dict) and finding.get("supported") is True
+                ]
+                if not supported_refs:
+                    raise StrategyEvidenceInvalid
+                pinned_runs.append(
+                    {
+                        "run_id": str(research_run.id),
+                        "agent_id": research_run.agent_id,
+                        "agent_version_id": str(research_version.id),
+                        "agent_version": research_version.version,
+                        "context_id": research_run.structured_input.get("context_id"),
+                        "research_query": output.get("research_query"),
+                        "supported_finding_refs": supported_refs,
+                        "output": output,
+                    }
+                )
+            structured_input["strategy_evidence"] = {
+                "approved_fact_refs": approved_fact_refs,
+                "research_runs": pinned_runs,
+            }
         evidence: list[SearchEvidence] = []
         if normalized_research_query is not None:
             try:
@@ -464,6 +553,7 @@ class AgentService:
                 "research_evidence_count": (
                     len(evidence) if normalized_research_query is not None else None
                 ),
+                "research_run_ids": [str(item) for item in selected_research_run_ids],
             },
             created_at=now,
         )

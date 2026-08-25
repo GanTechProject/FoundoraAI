@@ -312,6 +312,9 @@ export async function runAgent(formData: FormData): Promise<never> {
         skill_id: skillId || null,
         skill_input: skillInput,
         research_query: field(formData, "research_query") || null,
+        research_run_ids: formData
+          .getAll("research_run_ids")
+          .filter((value): value is string => typeof value === "string"),
       },
     );
   } catch {
@@ -349,6 +352,24 @@ export async function cancelAgentRun(runId: string): Promise<never> {
     );
   }
   redirect(`/agents?run=${encodeURIComponent(runId)}&updated=cancelled`);
+}
+
+export async function approveStrategy(formData: FormData): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest("/strategy/approve", {
+      run_id: field(formData, "run_id"),
+      expected_version: Number(field(formData, "expected_version")),
+    });
+  } catch {
+    redirect("/strategy?error=unavailable");
+  }
+  if (!response.ok) {
+    redirect(
+      `/strategy?error=${response.status === 409 ? "conflict" : response.status === 422 ? "invalid" : "unavailable"}`,
+    );
+  }
+  redirect("/strategy?updated=approved");
 }
 
 function taskError(response: Response): string {

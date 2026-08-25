@@ -86,4 +86,5 @@ An earlier capped gateway fallback reached Gemini successfully, so this is
 external credential/quota state rather than a Phase 16 search or research
 contract failure; no provider success is fabricated.
 
-Phase 17 business strategy is not implemented. Phase 16 stops here.
+Phase 16 stops at source-backed research. Phase 17 business strategy is now
+implemented separately in `docs/phase-17-business-strategy.md`.
