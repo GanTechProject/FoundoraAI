@@ -22,6 +22,10 @@ from foundora.agents.product_offer import PRODUCT_OFFER_AGENT_ID, strategy_item_
 from foundora.agents.research import RESEARCH_AGENT_IDS, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.strategy import BUSINESS_STRATEGIST_AGENT_ID
+from foundora.agents.website_specification import (
+    WEBSITE_SPECIFICATION_AGENT_ID,
+    brand_system_references,
+)
 from foundora.auth.service import AuthContext
 from foundora.business.context import resolve_selected_business
 from foundora.business_brain.service import (
@@ -38,6 +42,7 @@ from foundora.models import (
     AgentSkillAssignment,
     AgentVersion,
     ApprovedBusinessStrategy,
+    BrandSystemVersion,
     ModelGatewayCall,
     ProductOfferVersion,
     Skill,
@@ -87,6 +92,10 @@ class ProductOfferEvidenceInvalid(Exception):
 
 
 class BrandEvidenceInvalid(Exception):
+    pass
+
+
+class WebsiteSpecificationEvidenceInvalid(Exception):
     pass
 
 
@@ -618,6 +627,109 @@ class AgentService:
                 "product_offer_context_id": approved_product_offer.context_id,
                 "product_offer_refs": sorted(offer_refs),
                 "approved_product_offer": approved_product_offer.portfolio,
+            }
+        if agent.id == WEBSITE_SPECIFICATION_AGENT_ID:
+            async with self._session_factory() as database:
+                approved_strategy = await database.get(ApprovedBusinessStrategy, business.id)
+                approved_product_offer = await database.scalar(
+                    select(ProductOfferVersion).where(
+                        ProductOfferVersion.business_id == business.id,
+                        ProductOfferVersion.status == "active",
+                    )
+                )
+                approved_brand = await database.scalar(
+                    select(BrandSystemVersion).where(
+                        BrandSystemVersion.business_id == business.id,
+                        BrandSystemVersion.status == "active",
+                    )
+                )
+            if (
+                approved_strategy is None
+                or approved_product_offer is None
+                or approved_brand is None
+                or approved_product_offer.source_strategy_version != approved_strategy.version
+                or approved_brand.source_strategy_version != approved_strategy.version
+                or approved_brand.source_product_offer_id != approved_product_offer.id
+                or approved_brand.source_product_offer_version != approved_product_offer.version
+            ):
+                raise WebsiteSpecificationEvidenceInvalid
+            strategy_refs = strategy_item_references(
+                approved_strategy.strategy, business.id, approved_strategy.version
+            )
+            offer_refs = product_offer_references(
+                approved_product_offer.portfolio,
+                approved_product_offer.id,
+                approved_product_offer.version,
+            )
+            brand_refs = brand_system_references(
+                approved_brand.brand_system, approved_brand.id, approved_brand.version
+            )
+            if not strategy_refs or not offer_refs or not brand_refs:
+                raise WebsiteSpecificationEvidenceInvalid
+            sources = compiled_context.get("sources")
+            source_items = sources if isinstance(sources, list) else []
+
+            def source_with_authority(authority: str) -> dict[str, object] | None:
+                return next(
+                    (
+                        item
+                        for item in source_items
+                        if isinstance(item, dict) and item.get("authority") == authority
+                    ),
+                    None,
+                )
+
+            strategy_source = source_with_authority("founder_approved_strategy")
+            offer_source = source_with_authority("founder_approved_product_offer")
+            brand_source = source_with_authority("founder_approved_brand_system")
+            strategy_content = (
+                strategy_source.get("content") if isinstance(strategy_source, dict) else None
+            )
+            offer_content = offer_source.get("content") if isinstance(offer_source, dict) else None
+            brand_content = brand_source.get("content") if isinstance(brand_source, dict) else None
+            if (
+                not isinstance(strategy_source, dict)
+                or strategy_source.get("source_version") != str(approved_strategy.version)
+                or not isinstance(strategy_content, dict)
+                or strategy_content.get("source_agent_run_id")
+                != str(approved_strategy.source_agent_run_id)
+                or strategy_content.get("strategy") != approved_strategy.strategy
+                or not isinstance(offer_source, dict)
+                or offer_source.get("source_version") != str(approved_product_offer.version)
+                or not isinstance(offer_content, dict)
+                or offer_content.get("portfolio_id") != str(approved_product_offer.id)
+                or offer_content.get("source_agent_run_id")
+                != str(approved_product_offer.source_agent_run_id)
+                or offer_content.get("portfolio") != approved_product_offer.portfolio
+                or not isinstance(brand_source, dict)
+                or brand_source.get("source_version") != str(approved_brand.version)
+                or not isinstance(brand_content, dict)
+                or brand_content.get("brand_system_id") != str(approved_brand.id)
+                or brand_content.get("source_agent_run_id")
+                != str(approved_brand.source_agent_run_id)
+                or brand_content.get("brand_system") != approved_brand.brand_system
+            ):
+                raise WebsiteSpecificationEvidenceInvalid
+            structured_input["website_specification_evidence"] = {
+                "strategy_version": approved_strategy.version,
+                "strategy_source_agent_run_id": str(approved_strategy.source_agent_run_id),
+                "strategy_context_id": approved_strategy.context_id,
+                "strategy_item_refs": sorted(strategy_refs),
+                "approved_strategy": approved_strategy.strategy,
+                "product_offer_id": str(approved_product_offer.id),
+                "product_offer_version": approved_product_offer.version,
+                "product_offer_source_agent_run_id": str(
+                    approved_product_offer.source_agent_run_id
+                ),
+                "product_offer_context_id": approved_product_offer.context_id,
+                "product_offer_refs": sorted(offer_refs),
+                "approved_product_offer": approved_product_offer.portfolio,
+                "brand_system_id": str(approved_brand.id),
+                "brand_version": approved_brand.version,
+                "brand_source_agent_run_id": str(approved_brand.source_agent_run_id),
+                "brand_context_id": approved_brand.context_id,
+                "brand_item_refs": sorted(brand_refs),
+                "approved_brand_system": approved_brand.brand_system,
             }
         evidence: list[SearchEvidence] = []
         if normalized_research_query is not None:

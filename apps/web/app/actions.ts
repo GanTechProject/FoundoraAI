@@ -408,6 +408,29 @@ export async function approveBrand(formData: FormData): Promise<never> {
   redirect("/brand?updated=approved");
 }
 
+export async function approveWebsiteSpecification(
+  formData: FormData,
+): Promise<never> {
+  let response: Response;
+  try {
+    response = await authenticatedApiRequest(
+      "/website-specifications/approve",
+      {
+        run_id: field(formData, "run_id"),
+        expected_version: Number(field(formData, "expected_version")),
+      },
+    );
+  } catch {
+    redirect("/website-specifications?error=unavailable");
+  }
+  if (!response.ok) {
+    redirect(
+      `/website-specifications?error=${response.status === 409 ? "conflict" : response.status === 422 ? "invalid" : "unavailable"}`,
+    );
+  }
+  redirect("/website-specifications?updated=approved");
+}
+
 function taskError(response: Response): string {
   if (response.status === 404) return "not-found";
   if (response.status === 409) return "conflict";

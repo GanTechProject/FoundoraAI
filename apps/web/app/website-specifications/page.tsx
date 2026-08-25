@@ -2,31 +2,29 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getAuthSession } from "../../lib/auth";
-import { getBrandDashboard } from "../../lib/brand";
 import { getBusinesses } from "../../lib/businesses";
-import { approveBrand, logout } from "../actions";
+import { getWebsiteSpecificationDashboard } from "../../lib/website-specifications";
+import { approveWebsiteSpecification, logout } from "../actions";
 
 export const dynamic = "force-dynamic";
 
 const messages: Record<string, string> = {
-  approved: "The selected brand system is now founder-approved business data.",
+  approved:
+    "The selected website specification is now founder-approved business data.",
 };
 const errors: Record<string, string> = {
   conflict:
-    "The active brand system changed. Reload and review the current version.",
+    "The active website specification changed. Reload and review the current version.",
   invalid:
-    "That run is not a valid proposal tied to the current approved strategy and offer.",
-  unavailable: "Brand state is temporarily unavailable.",
+    "That run is not a complete proposal tied to the current strategy, offer, and brand.",
+  unavailable: "Website specification state is temporarily unavailable.",
 };
-const sectionLabels: Record<string, string> = {
-  brand_strategy: "Brand strategy",
-  positioning: "Positioning",
-  naming_analysis: "Naming analysis",
-  voice: "Voice",
-  messaging: "Messaging",
-  visual_direction: "Visual direction",
-  brand_rules: "Brand rules",
-  asset_references: "Asset references",
+const requirementLabels: Record<string, string> = {
+  conversion_goals: "Conversion goals",
+  seo_requirements: "SEO requirements",
+  content_requirements: "Content requirements",
+  brand_constraints: "Brand constraints",
+  technical_requirements: "Technical requirements",
 };
 
 function records(value: unknown): Array<Record<string, unknown>> {
@@ -38,7 +36,7 @@ function records(value: unknown): Array<Record<string, unknown>> {
     : [];
 }
 
-export default async function BrandPage({
+export default async function WebsiteSpecificationsPage({
   searchParams,
 }: {
   searchParams: Promise<{ updated?: string; error?: string }>;
@@ -47,37 +45,34 @@ export default async function BrandPage({
   if (!auth) redirect("/login");
   const businesses = await getBusinesses();
   if (!businesses?.selected_business_id) redirect("/workspace");
-  const dashboard = await getBrandDashboard();
+  const dashboard = await getWebsiteSpecificationDashboard();
   const params = await searchParams;
 
   return (
     <main className="settings-shell agents-shell">
       <header className="settings-header">
         <div>
-          <p className="eyebrow">FOUNDORA / BRAND SYSTEM</p>
-          <h1>Approved rules, reusable brand direction</h1>
+          <p className="eyebrow">FOUNDORA / WEBSITE SPECIFICATIONS</p>
+          <h1>Complete direction before a single line of code</h1>
           <p className="lede">
-            Brand proposals inherit the current approved strategy and offer.
-            Every rule remains traceable, names remain unchecked, assets remain
-            proposed references, and only explicit founder approval makes the
-            system authoritative.
+            Specifications inherit the exact approved strategy, offer, and
+            brand. They define every page and requirement for founder review;
+            repository access, code generation, builds, and deployment remain
+            explicitly outside this phase.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
           <Link className="text-link" href="/agents">
             Agents
           </Link>
-          <Link className="text-link" href="/strategy">
-            Strategy
+          <Link className="text-link" href="/brand">
+            Brand
           </Link>
           <Link className="text-link" href="/products-offers">
             Products &amp; offers
           </Link>
           <Link className="text-link" href="/brain">
             Business brain
-          </Link>
-          <Link className="text-link" href="/website-specifications">
-            Website specification
           </Link>
           <form action={logout}>
             <button className="button-secondary" type="submit">
@@ -94,19 +89,21 @@ export default async function BrandPage({
         <p className="notice notice--error">{errors[params.error]}</p>
       ) : null}
       {!dashboard ? (
-        <p className="notice notice--error">Brand state could not be loaded.</p>
+        <p className="notice notice--error">
+          Website specification state could not be loaded.
+        </p>
       ) : null}
 
       {dashboard ? (
         <>
           <section className="panel">
-            <p className="eyebrow">FOUNDER APPROVAL</p>
+            <p className="eyebrow">FOUNDER REVIEW</p>
             <h2>Completed proposals</h2>
             {dashboard.candidate_runs.length ? (
               dashboard.candidate_runs.map((run) => (
                 <form
                   className="agent-run-form"
-                  action={approveBrand}
+                  action={approveWebsiteSpecification}
                   key={run.run_id}
                 >
                   <input type="hidden" name="run_id" value={run.run_id} />
@@ -115,11 +112,12 @@ export default async function BrandPage({
                     name="expected_version"
                     value={dashboard.current_version}
                   />
-                  <strong>{run.brand_title}</strong>
+                  <strong>{run.project_title}</strong>
                   <code>{run.run_id}</code>
                   <span>
                     Strategy v{run.source_strategy_version} · offer v
-                    {run.source_product_offer_version}
+                    {run.source_product_offer_version} · brand v
+                    {run.source_brand_version}
                   </span>
                   <button
                     type="submit"
@@ -128,50 +126,90 @@ export default async function BrandPage({
                     }
                   >
                     {dashboard.current?.source_agent_run_id === run.run_id
-                      ? "Current approved brand"
+                      ? "Current approved specification"
                       : "Approve after review"}
                   </button>
                 </form>
               ))
             ) : (
               <p>
-                No completed Brand Strategist proposal is ready. Approve a
-                strategy and product/offer portfolio, then queue the agent.
+                No completed Website Specification proposal is ready. Approve
+                aligned strategy, offer, and brand versions, then queue the
+                specification agent.
               </p>
             )}
           </section>
 
           <section className="panel">
-            <p className="eyebrow">ACTIVE BRAND SYSTEM</p>
+            <p className="eyebrow">ACTIVE SPECIFICATION</p>
             <h2>
               {dashboard.current
-                ? `${String(dashboard.current.brand_system.brand_title ?? "Brand system")} · version ${dashboard.current.version}`
+                ? `${String(dashboard.current.specification.project_title ?? "Website specification")} · version ${dashboard.current.version}`
                 : "Not approved yet"}
             </h2>
             {dashboard.current ? (
               <>
                 <p>
-                  <strong>Tagline:</strong>{" "}
+                  <strong>Site objective:</strong>{" "}
                   {String(
                     (
-                      dashboard.current.brand_system.tagline as
+                      dashboard.current.specification.site_objective as
                         Record<string, unknown> | undefined
-                    )?.statement ?? "No tagline recorded",
+                    )?.statement ?? "No site objective recorded",
                   )}
                 </p>
                 <p className="fine-print">
-                  Active · strategy v{dashboard.current.source_strategy_version}{" "}
-                  · offer v{dashboard.current.source_product_offer_version} ·
-                  run <code>{dashboard.current.source_agent_run_id}</code>
+                  Code generation:{" "}
+                  <strong>
+                    {String(
+                      dashboard.current.specification.code_generation_status ??
+                        "not_started",
+                    )}
+                  </strong>{" "}
+                  · strategy v{dashboard.current.source_strategy_version} ·
+                  offer v{dashboard.current.source_product_offer_version} ·
+                  brand v{dashboard.current.source_brand_version}
                 </p>
+
+                <section className="panel">
+                  <h3>Sitemap and page specifications</h3>
+                  <ul>
+                    {records(dashboard.current.specification.sitemap).map(
+                      (page) => (
+                        <li key={String(page.page_id)}>
+                          <code>{String(page.path)}</code> —{" "}
+                          {String(page.label)}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                  <div className="agent-registry">
+                    {records(dashboard.current.specification.page_specs).map(
+                      (page) => (
+                        <article
+                          className="panel agent-card"
+                          key={String(page.page_id)}
+                        >
+                          <h3>{String(page.page_name)}</h3>
+                          <code>{String(page.path)}</code>
+                          <p>{String(page.purpose)}</p>
+                          <p className="fine-print">
+                            {records(page.sections).length} specified sections
+                          </p>
+                        </article>
+                      ),
+                    )}
+                  </div>
+                </section>
+
                 <div className="agent-registry">
-                  {Object.entries(sectionLabels).map(([key, label]) => (
+                  {Object.entries(requirementLabels).map(([key, label]) => (
                     <article className="panel agent-card" key={key}>
                       <h3>{label}</h3>
                       <ul>
-                        {records(dashboard.current?.brand_system[key]).map(
+                        {records(dashboard.current?.specification[key]).map(
                           (item) => (
-                            <li key={String(item.item_id)}>
+                            <li key={String(item.item_id ?? item.goal_id)}>
                               {String(item.statement)}
                             </li>
                           ),
@@ -182,7 +220,7 @@ export default async function BrandPage({
                 </div>
               </>
             ) : (
-              <p>No brand system has received founder approval.</p>
+              <p>No website specification has received founder approval.</p>
             )}
           </section>
 
@@ -195,7 +233,8 @@ export default async function BrandPage({
                   <li key={item.id}>
                     Version {item.version} · {item.status} · strategy v
                     {item.source_strategy_version} · offer v
-                    {item.source_product_offer_version}
+                    {item.source_product_offer_version} · brand v
+                    {item.source_brand_version}
                   </li>
                 ))}
               </ul>

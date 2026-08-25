@@ -22,6 +22,10 @@ from foundora.agents.product_offer import (
 from foundora.agents.research import research_prompt_constraints, validate_research_output
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.strategy import strategy_prompt_constraints, validate_strategy_output
+from foundora.agents.website_specification import (
+    validate_website_specification_output,
+    website_specification_prompt_constraints,
+)
 from foundora.infrastructure.database import get_session_factory
 from foundora.model_gateway.service import GatewayRequest, GatewayResult, ModelGateway
 from foundora.model_gateway.types import GatewayError
@@ -284,6 +288,9 @@ def _gateway_request(claim: ExecutionClaim) -> GatewayRequest:
     system_prompt += strategy_prompt_constraints(claim.agent_id, claim.structured_input)
     system_prompt += product_offer_prompt_constraints(claim.agent_id, claim.structured_input)
     system_prompt += brand_prompt_constraints(claim.agent_id, claim.structured_input)
+    system_prompt += website_specification_prompt_constraints(
+        claim.agent_id, claim.structured_input
+    )
     return GatewayRequest(
         task_type=task_type,
         prompt=json.dumps(claim.structured_input, ensure_ascii=False, sort_keys=True),
@@ -348,6 +355,7 @@ class AgentRuntime:
             validate_strategy_output(claim.agent_id, claim.structured_input, output)
             validate_product_offer_output(claim.agent_id, claim.structured_input, output)
             validate_brand_output(claim.agent_id, claim.structured_input, output)
+            validate_website_specification_output(claim.agent_id, claim.structured_input, output)
             await self._repository.complete(run_id, output)
         except AgentSchemaError as error:
             await self._repository.fail(run_id, "agent_schema_invalid", str(error))

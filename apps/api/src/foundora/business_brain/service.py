@@ -27,6 +27,7 @@ from foundora.models import (
     ProductOfferVersion,
     Task,
     TaskDependency,
+    WebsiteSpecificationVersion,
 )
 
 SourceType = Literal[
@@ -35,6 +36,7 @@ SourceType = Literal[
     "approved_goals",
     "products_services",
     "brand",
+    "website_specification",
     "operating_context",
     "operational_goals",
     "current_tasks",
@@ -52,6 +54,7 @@ SOURCE_TYPES: tuple[SourceType, ...] = (
     "approved_goals",
     "products_services",
     "brand",
+    "website_specification",
     "operating_context",
     "operational_goals",
     "current_tasks",
@@ -272,6 +275,12 @@ class ContextService:
                     BrandSystemVersion.status == "active",
                 )
             )
+            approved_website_specification = await database.scalar(
+                select(WebsiteSpecificationVersion).where(
+                    WebsiteSpecificationVersion.business_id == business.id,
+                    WebsiteSpecificationVersion.status == "active",
+                )
+            )
             goals = list(
                 await database.scalars(
                     select(BusinessGoal)
@@ -395,6 +404,30 @@ class ContextService:
         if approved_brand is not None:
             unavailable.pop("brand", None)
             candidates.append(self._approved_brand_candidate(approved_brand))
+        if approved_website_specification is None:
+            unavailable["website_specification"] = (
+                "No founder-approved website specification exists for this business."
+            )
+        else:
+            specification_aligned = (
+                approved_strategy is not None
+                and approved_product_offer is not None
+                and approved_brand is not None
+                and approved_website_specification.source_strategy_version
+                == approved_strategy.version
+                and approved_website_specification.source_product_offer_id
+                == approved_product_offer.id
+                and approved_website_specification.source_product_offer_version
+                == approved_product_offer.version
+                and approved_website_specification.source_brand_system_id == approved_brand.id
+                and approved_website_specification.source_brand_version == approved_brand.version
+            )
+            candidates.append(
+                self._approved_website_specification_candidate(
+                    approved_website_specification,
+                    validity="current" if specification_aligned else "stale",
+                )
+            )
         candidates.extend(self._goal_candidates(goals))
         if not goals:
             unavailable["operational_goals"] = "No business goals are recorded."
@@ -491,6 +524,38 @@ class ContextService:
                 "brand_system": brand.brand_system,
                 "brand_rules": brand.brand_system.get("brand_rules", []),
                 "evidence_refs": brand.evidence_refs,
+            },
+        )
+
+    @staticmethod
+    def _approved_website_specification_candidate(
+        specification: WebsiteSpecificationVersion,
+        *,
+        validity: SourceValidity = "current",
+    ) -> ContextCandidate:
+        return ContextCandidate(
+            source_type="website_specification",
+            source_reference=f"website_specification_versions/{specification.id}",
+            source_version=str(specification.version),
+            authority="founder_approved_website_specification",
+            label=f"Founder-approved website specification v{specification.version}",
+            updated_at=specification.approved_at,
+            validity=validity,
+            content={
+                "website_specification_id": str(specification.id),
+                "status": specification.status,
+                "source_agent_run_id": str(specification.source_agent_run_id),
+                "source_strategy_version": specification.source_strategy_version,
+                "source_product_offer_id": str(specification.source_product_offer_id),
+                "source_product_offer_version": specification.source_product_offer_version,
+                "source_brand_system_id": str(specification.source_brand_system_id),
+                "source_brand_version": specification.source_brand_version,
+                "context_id": specification.context_id,
+                "specification": specification.specification,
+                "code_generation_status": specification.specification.get(
+                    "code_generation_status", "not_started"
+                ),
+                "evidence_refs": specification.evidence_refs,
             },
         )
 

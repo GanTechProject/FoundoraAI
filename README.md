@@ -204,7 +204,17 @@ proposal. Approval creates an immutable brand-system version, supersedes the pri
 active version, publishes `brand.approved`, and exposes both the complete system and
 its approved `brand_rules` through the provider-neutral Business Brain. The agent
 cannot self-approve, create assets, publish, or claim trademark/domain availability.
-The schema head is `20260825_19`.
+
+The registry also includes `website-specification@1`. It requires an aligned current
+founder-approved strategy, active product/offer portfolio, and active brand system.
+It proposes a site objective, rooted sitemap, one specification per page, conversion
+goals, SEO requirements, content requirements, brand constraints, and provider-neutral
+technical requirements. Every artifact cites all three immutable sources. Open
+`/website-specifications` to review and approve a complete proposal. Approval creates
+an immutable active specification, publishes `website_specification.approved`, and
+exposes the specification through the Business Brain for a future coding agent. The
+contract has no tools or repository/filesystem access, and code generation remains
+explicitly `not_started`. The schema head is `20260825_20`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 
@@ -224,7 +234,7 @@ Run every formatting, lint, type-check, test, build, migration, dependency-reach
 ./scripts/verify.ps1
 ```
 
-The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, strategy approval-boundary, product/offer approval-boundary, and brand approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 19 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17 through 19 contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
+The verification script leaves the primary application running for inspection. Authentication, business-isolation, onboarding approval-boundary, capped real-provider gateway, agent lifecycle, assigned-skill boundary, task persistence/dependency/retry, workflow checkpoint/resume, governance bypass/kill-switch, event delivery/dead-letter, knowledge ingestion/retrieval, memory policy/provenance, executive-contract, source-backed research, strategy approval-boundary, product/offer approval-boundary, brand approval-boundary, and website-specification approval-boundary smoke checks use temporary isolated databases and containers that are removed automatically, so existing development owner and business data are not modified. The smoke suite can incur a small provider charge within the enforced operation budgets documented in the Phase 05, Phase 07, and Phase 08 evidence. Phases 09 through 14 make no provider call; Phases 15 through 20 call a model only when the founder explicitly queues an agent run. The Phase 16 SearchProvider and Phase 17 through 20 contract/approval smokes are local and deterministic. Individual suites are available through `./scripts/quality.ps1` and `./scripts/smoke.ps1`.
 
 Push and pull-request CI uses `./scripts/ci.ps1`, which runs deterministic quality,
 build, migration, health, and process gates without requiring or billing external
@@ -241,4 +251,4 @@ scripts/        Reproducible PowerShell quality and smoke checks
 compose.yaml    Portable local service topology
 ```
 
-Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue and reconciles durable event deliveries directly from PostgreSQL. Business workspaces, onboarding drafts, founder-approved profiles and strategies, immutable product/offer versions, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, policy versions, governance controls, action approvals, audit evidence, domain events, consumer deliveries, knowledge sources/documents/chunks/vectors, memory policies/proposals/records/revisions/provenance, and model usage are durable PostgreSQL records. Original knowledge files use the configured storage abstraction. Business-brain context remains derived from authoritative selected-business records, explicitly retrieved cited knowledge, and active curated memory. External provider tools and later operational domains remain deferred to their authorized phases.
+Redis carries queues, login rate-limit counters, and ephemeral coordination; PostgreSQL remains the durable source of truth. The worker consumes the `foundora` RQ queue and reconciles durable event deliveries directly from PostgreSQL. Business workspaces, onboarding drafts, founder-approved profiles and strategies, immutable product/offer, brand-system, and website-specification versions, agent, skill, and workflow definitions and versions, exact assignments, agent runs and messages, tasks, dependencies, task events, workflow runs, step runs, workflow events, policy versions, governance controls, action approvals, audit evidence, domain events, consumer deliveries, knowledge sources/documents/chunks/vectors, memory policies/proposals/records/revisions/provenance, and model usage are durable PostgreSQL records. Original knowledge files use the configured storage abstraction. Business-brain context remains derived from authoritative selected-business records, explicitly retrieved cited knowledge, and active curated memory. External provider tools and later operational domains remain deferred to their authorized phases.

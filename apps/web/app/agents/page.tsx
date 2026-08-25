@@ -78,7 +78,9 @@ export default async function AgentsPage({
             the current approved strategy into traceable proposals that still
             require separate founder approval. The Brand Strategist converts the
             aligned approved strategy and offer into reusable proposed brand
-            rules with no publishing authority.
+            rules with no publishing authority. The Website Specification Agent
+            turns those aligned approvals into a complete founder-reviewable
+            blueprint while code generation remains explicitly not started.
           </p>
         </div>
         <nav className="header-actions" aria-label="Owner navigation">
@@ -96,6 +98,9 @@ export default async function AgentsPage({
           </Link>
           <Link className="text-link" href="/brand">
             Brand
+          </Link>
+          <Link className="text-link" href="/website-specifications">
+            Website specification
           </Link>
           <Link className="text-link" href="/tasks">
             Task engine

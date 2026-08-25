@@ -27,6 +27,7 @@ from foundora.agents.service import (
     SkillDefinitionRecord,
     SkillNotAssigned,
     StrategyEvidenceInvalid,
+    WebsiteSpecificationEvidenceInvalid,
 )
 from foundora.agents.strategy import BUSINESS_STRATEGIST_AGENT_ID, evidence_allowlists
 from foundora.api.auth import require_auth, require_csrf
@@ -568,6 +569,17 @@ async def create_agent_run(
                 "message": (
                     "Brand proposals require the current approved strategy and an active "
                     "approved product and offer portfolio derived from that strategy"
+                ),
+            },
+        ) from error
+    except WebsiteSpecificationEvidenceInvalid as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_website_specification_evidence",
+                "message": (
+                    "Website specifications require an aligned current approved strategy, "
+                    "active product and offer portfolio, and active brand system"
                 ),
             },
         ) from error

@@ -27,6 +27,7 @@ from foundora.api.onboarding import router as onboarding_router
 from foundora.api.product_offers import router as product_offers_router
 from foundora.api.strategy import router as strategy_router
 from foundora.api.tasks import router as tasks_router
+from foundora.api.website_specifications import router as website_specifications_router
 from foundora.api.workflows import router as workflows_router
 from foundora.business.context import NoSelectedBusiness
 from foundora.config import get_settings
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     application.include_router(strategy_router)
     application.include_router(product_offers_router)
     application.include_router(brand_router)
+    application.include_router(website_specifications_router)
     return application
 
 
