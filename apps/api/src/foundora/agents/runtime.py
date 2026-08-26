@@ -33,6 +33,7 @@ from foundora.agents.website_specification import (
     website_specification_prompt_constraints,
 )
 from foundora.events.service import publish_event
+from foundora.governance.service import GovernanceService
 from foundora.infrastructure.database import get_session_factory
 from foundora.model_gateway.service import GatewayRequest, GatewayResult, ModelGateway
 from foundora.model_gateway.types import GatewayError
@@ -120,8 +121,13 @@ class RuntimeWebsiteBuilder(Protocol):
 
 
 class SqlRuntimeRepository:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+        governance: GovernanceService | None = None,
+    ) -> None:
         self._session_factory = session_factory or get_session_factory()
+        self._governance = governance or GovernanceService()
 
     async def claim(self, run_id: uuid.UUID, operation_id: uuid.UUID) -> ExecutionClaim | None:
         async with self._session_factory() as database:
@@ -256,20 +262,35 @@ class SqlRuntimeRepository:
 
     async def authorize_website_build(self, run_id: uuid.UUID) -> bool:
         async with self._session_factory() as database:
-            run = await database.get(AgentRun, run_id)
-            if run is None or run.status != "running" or run.agent_id != WEBSITE_CODING_AGENT_ID:
-                return False
-            controls = await database.get(GlobalGovernanceControl, 1)
-            if controls is None or controls.kill_switch_enabled:
-                return False
-            disabled_tool = await database.scalar(
-                select(GovernanceToolPermission.tool_id).where(
-                    GovernanceToolPermission.business_id == run.business_id,
-                    GovernanceToolPermission.tool_id.in_(WEBSITE_TOOL_IDS),
-                    GovernanceToolPermission.enabled.is_(False),
+            async with database.begin():
+                run = await database.scalar(
+                    select(AgentRun).where(AgentRun.id == run_id).with_for_update()
                 )
-            )
-            return disabled_tool is None
+                if (
+                    run is None
+                    or run.status != "running"
+                    or run.agent_id != WEBSITE_CODING_AGENT_ID
+                ):
+                    return False
+                decisions = []
+                for tool_id in WEBSITE_TOOL_IDS:
+                    record = await self._governance.evaluate_in_session(
+                        database,
+                        business_id=run.business_id,
+                        action_type="internal.content.create",
+                        actor_type="agent",
+                        actor_id=run.agent_id,
+                        tool_id=tool_id,
+                        execution_mode="manual",
+                        data_classification="confidential",
+                        requested_spend_microusd=0,
+                        frequency_key=f"website-build:{run.id}",
+                        target=f"website-project:{run.business_id}",
+                        idempotency_key=f"agent-run:{run.id}:website-tool:{tool_id}",
+                        created_by_owner_id=None,
+                    )
+                    decisions.append(record.action.status)
+                return all(status == "authorized" for status in decisions)
 
     async def complete_website_build(
         self,

@@ -24,10 +24,18 @@ def _strategy_evidence(structured_input: dict[str, object]) -> dict[str, object]
     return evidence
 
 
+def approved_profile_version(structured_input: dict[str, object]) -> int:
+    value = _strategy_evidence(structured_input).get("approved_profile_version")
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise AgentSchemaError("Strategy approved-profile version is invalid")
+    return value
+
+
 def evidence_allowlists(
     structured_input: dict[str, object],
 ) -> tuple[set[str], set[str]]:
     evidence = _strategy_evidence(structured_input)
+    approved_profile_version(structured_input)
     fact_refs = evidence.get("approved_fact_refs")
     research_runs = evidence.get("research_runs")
     if not isinstance(fact_refs, list) or not all(isinstance(item, str) for item in fact_refs):

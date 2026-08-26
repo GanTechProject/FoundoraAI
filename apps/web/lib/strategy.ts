@@ -9,6 +9,7 @@ export interface StrategyDashboard {
     business_id: string;
     version: number;
     source_agent_run_id: string;
+    source_profile_version: number;
     context_id: string;
     strategy: Record<string, unknown>;
     evidence_refs: Record<string, unknown>;

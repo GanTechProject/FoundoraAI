@@ -503,6 +503,7 @@ class ContextService:
             validity="current",
             content={
                 "source_agent_run_id": str(strategy.source_agent_run_id),
+                "source_profile_version": strategy.source_profile_version,
                 "context_id": strategy.context_id,
                 "strategy": strategy.strategy,
                 "evidence_refs": strategy.evidence_refs,

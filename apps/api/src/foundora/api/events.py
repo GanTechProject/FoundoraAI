@@ -144,6 +144,7 @@ def _dashboard_view(record: EventDashboard) -> EventDashboardView:
 @router.get("", response_model=EventDashboardView)
 async def event_dashboard(
     context: Annotated[AuthContext, Depends(require_auth)],
+    response: Response,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     delivery_status: Annotated[DeliveryStatus | None, Query()] = None,
@@ -154,6 +155,7 @@ async def event_dashboard(
         offset=offset,
         delivery_status=delivery_status,
     )
+    response.headers["Cache-Control"] = "no-store"
     return _dashboard_view(record)
 
 

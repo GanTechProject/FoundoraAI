@@ -14,6 +14,8 @@ Invoke-Checked { docker compose --profile quality run --build --rm api-quality r
 Invoke-Checked { docker compose --profile quality run --rm api-quality ruff check src tests alembic }
 Invoke-Checked { docker compose --profile quality run --rm api-quality mypy src }
 Invoke-Checked { docker compose --profile quality run --rm api-quality pytest }
+Invoke-Checked { docker compose run --rm migrate }
+Invoke-Checked { docker compose run --rm migrate alembic check }
 
 Invoke-Checked { docker compose --profile quality run --build --rm web-quality npm run format:check }
 Invoke-Checked { docker compose --profile quality run --rm web-quality npm run lint }

@@ -24,6 +24,17 @@ export interface AuthView {
 
 const sessionCookieName = "id";
 const csrfCookieName = "csrf";
+export const normalMutationTimeoutMs = 5000;
+const defaultModelRequestTimeoutMs = 300_000;
+
+export function modelRequestTimeoutMs(): number {
+  const configured = Number(process.env.API_MODEL_REQUEST_TIMEOUT_MS ?? "");
+  return Number.isInteger(configured) &&
+    configured >= 30_000 &&
+    configured <= 600_000
+    ? configured
+    : defaultModelRequestTimeoutMs;
+}
 
 function apiUrl(path: string): string {
   const base = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
@@ -105,6 +116,7 @@ export async function getActiveSessions(): Promise<SessionView[] | null> {
 export async function authenticatedApiRequest(
   path: string,
   body: Record<string, unknown> | undefined,
+  options: { timeoutMs?: number } = {},
 ): Promise<Response> {
   const store = await cookies();
   const session = store.get(sessionCookieName)?.value;
@@ -121,7 +133,7 @@ export async function authenticatedApiRequest(
     cache: "no-store",
     headers,
     body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(options.timeoutMs ?? normalMutationTimeoutMs),
   });
 }
 

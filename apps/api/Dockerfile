@@ -1,8 +1,11 @@
+FROM node:24.19.0-bookworm-slim AS node
+
 FROM python:3.13.15-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY pyproject.toml requirements.lock alembic.ini ./
 COPY alembic ./alembic
 COPY src ./src

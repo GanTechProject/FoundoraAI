@@ -194,13 +194,19 @@ async def login(payload: LoginRequest, request: Request, response: Response) -> 
 
 
 @router.get("/session", response_model=AuthView)
-async def session(context: Annotated[AuthContext, Depends(require_auth)]) -> AuthView:
+async def session(
+    context: Annotated[AuthContext, Depends(require_auth)], response: Response
+) -> AuthView:
+    response.headers["Cache-Control"] = "no-store"
     return AuthView(owner=_owner_view(context), session=_session_view(context))
 
 
 @router.get("/sessions", response_model=list[SessionView])
-async def sessions(context: Annotated[AuthContext, Depends(require_auth)]) -> list[SessionView]:
+async def sessions(
+    context: Annotated[AuthContext, Depends(require_auth)], response: Response
+) -> list[SessionView]:
     records = await AuthService().list_active_sessions(context)
+    response.headers["Cache-Control"] = "no-store"
     return [_session_view(context, record) for record in records]
 
 

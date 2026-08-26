@@ -53,6 +53,29 @@ def test_unauthenticated_session_access_is_blocked() -> None:
     assert response.json() == {"detail": "Authentication required"}
 
 
+def test_authenticated_session_responses_are_not_cacheable() -> None:
+    context, _ = auth_records()
+    with (
+        patch(
+            "foundora.api.auth.AuthService.resolve_session",
+            new=AsyncMock(return_value=context),
+        ),
+        patch(
+            "foundora.api.auth.AuthService.list_active_sessions",
+            new=AsyncMock(return_value=[context.session]),
+        ),
+        TestClient(app) as client,
+    ):
+        client.cookies.set("id", "session-token")
+        session_response = client.get("/auth/session")
+        sessions_response = client.get("/auth/sessions")
+
+    assert session_response.status_code == 200
+    assert sessions_response.status_code == 200
+    assert session_response.headers["Cache-Control"] == "no-store"
+    assert sessions_response.headers["Cache-Control"] == "no-store"
+
+
 def test_unsafe_request_without_trusted_origin_is_blocked() -> None:
     with TestClient(app) as client:
         response = client.post(

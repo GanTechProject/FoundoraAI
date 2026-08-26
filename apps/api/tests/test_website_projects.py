@@ -3,8 +3,10 @@ from __future__ import annotations
 import copy
 import uuid
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
 
 from foundora.agents.schema import AgentSchemaError
 from foundora.agents.website_coding import (
@@ -15,9 +17,13 @@ from foundora.agents.website_coding import (
     validate_website_coding_output,
     website_coding_prompt_constraints,
 )
+from foundora.api.auth import require_auth
+from foundora.auth.service import AuthContext
 from foundora.business_brain.service import ContextService
 from foundora.events.contracts import AUDIT_CONSUMER, consumers_for, validate_event
-from foundora.models import WebsiteProjectVersion
+from foundora.main import app
+from foundora.models import Owner, OwnerSession, WebsiteProjectVersion
+from foundora.website_projects.service import WebsiteProjectDashboard
 from foundora.website_projects.tools import ControlledWebsiteBuilder, ControlledWebsiteToolError
 
 SPECIFICATION_ID = "00000000-0000-0000-0000-000000002000"
@@ -204,6 +210,43 @@ def test_controlled_builder_rejects_external_and_failed_accessibility_source() -
     assert "network access" in prompt
 
 
+def test_controlled_builder_rejects_missing_assets_and_malformed_source() -> None:
+    missing_stylesheet = _output()
+    missing_changes = missing_stylesheet["changes"]
+    assert isinstance(missing_changes, list)
+    missing_changes.pop()
+    with pytest.raises(ControlledWebsiteToolError, match=r"referenced asset /styles\.css"):
+        ControlledWebsiteBuilder().build(_structured_input(), missing_stylesheet)
+
+    invalid_javascript = _output()
+    javascript_changes = invalid_javascript["changes"]
+    assert isinstance(javascript_changes, list)
+    javascript_changes.append(
+        {
+            "operation": "add",
+            "path": "app.js",
+            "media_type": "text/javascript",
+            "content": "const = ;",
+        }
+    )
+    with pytest.raises(ControlledWebsiteToolError, match="invalid JavaScript syntax"):
+        ControlledWebsiteBuilder().build(_structured_input(), invalid_javascript)
+
+    malformed_html = _output()
+    malformed_changes = malformed_html["changes"]
+    assert isinstance(malformed_changes, list) and isinstance(malformed_changes[0], dict)
+    malformed_changes[0]["content"] = _html().replace("</main>", "")
+    with pytest.raises(ControlledWebsiteToolError, match="malformed HTML"):
+        ControlledWebsiteBuilder().build(_structured_input(), malformed_html)
+
+    invalid_css = _output()
+    css_changes = invalid_css["changes"]
+    assert isinstance(css_changes, list) and isinstance(css_changes[1], dict)
+    css_changes[1]["content"] = "body { color: ; }"
+    with pytest.raises(ControlledWebsiteToolError, match="invalid CSS syntax"):
+        ControlledWebsiteBuilder().build(_structured_input(), invalid_css)
+
+
 def test_verified_project_is_current_brain_metadata_and_transactional_event() -> None:
     now = datetime.now(UTC)
     project = WebsiteProjectVersion(
@@ -257,6 +300,60 @@ def test_verified_project_is_current_brain_metadata_and_transactional_event() ->
     assert [consumer.name for consumer in consumers_for(contract.event_type)] == [
         AUDIT_CONSUMER.name
     ]
+
+
+def test_website_project_dashboard_is_not_cacheable() -> None:
+    now = datetime.now(UTC)
+    business_id = uuid.uuid4()
+    owner = Owner(
+        id=uuid.uuid4(),
+        singleton_key=1,
+        email="owner@example.com",
+        password_hash="hash",
+        created_at=now,
+        updated_at=now,
+        password_changed_at=now,
+    )
+    context = AuthContext(
+        owner=owner,
+        session=OwnerSession(
+            id=uuid.uuid4(),
+            owner_id=owner.id,
+            token_hash="a" * 64,
+            csrf_hash="b" * 64,
+            created_at=now,
+            last_seen_at=now,
+            idle_expires_at=now,
+            expires_at=now,
+            revoked_at=None,
+            user_agent="test",
+            selected_business_id=business_id,
+        ),
+    )
+    dashboard = WebsiteProjectDashboard(
+        business_id=business_id,
+        current_specification=None,
+        current_project=None,
+        history=[],
+        recent_runs=[],
+        next_operation=None,
+        blocker="Approve a website specification.",
+    )
+    app.dependency_overrides[require_auth] = lambda: context
+    try:
+        with (
+            patch(
+                "foundora.api.website_projects.WebsiteProjectService.dashboard",
+                new=AsyncMock(return_value=dashboard),
+            ),
+            TestClient(app) as client,
+        ):
+            response = client.get("/website-projects")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
 
 
 def test_modification_requires_exact_base_and_applies_update() -> None:

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.strategy import (
     BUSINESS_STRATEGIST_AGENT_ID,
+    approved_profile_version,
     evidence_allowlists,
     validate_strategy_output,
 )
@@ -17,7 +18,12 @@ from foundora.auth.service import AuthContext
 from foundora.business.context import resolve_selected_business
 from foundora.events.service import publish_event
 from foundora.infrastructure.database import get_session_factory
-from foundora.models import AgentRun, AgentVersion, ApprovedBusinessStrategy
+from foundora.models import (
+    AgentRun,
+    AgentVersion,
+    ApprovedBusinessProfile,
+    ApprovedBusinessStrategy,
+)
 
 
 class StrategyRunNotFound(Exception):
@@ -104,15 +110,22 @@ class StrategyService:
                     validate_strategy_output(
                         run.agent_id, run.structured_input, run.structured_output
                     )
+                    source_profile_version = approved_profile_version(run.structured_input)
                     approved_refs, research_refs = evidence_allowlists(run.structured_input)
                 except AgentSchemaError as error:
                     raise StrategyRunInvalid from error
+                current_profile = await database.get(
+                    ApprovedBusinessProfile, business.id, with_for_update=True
+                )
+                if current_profile is None or current_profile.version != source_profile_version:
+                    raise StrategyRunInvalid
                 now = _now()
                 if approved is None:
                     approved = ApprovedBusinessStrategy(
                         business_id=business.id,
                         version=1,
                         source_agent_run_id=run.id,
+                        source_profile_version=source_profile_version,
                         context_id=str(run.structured_input["context_id"]),
                         strategy=dict(run.structured_output),
                         evidence_refs={
@@ -126,6 +139,7 @@ class StrategyService:
                 else:
                     approved.version += 1
                     approved.source_agent_run_id = run.id
+                    approved.source_profile_version = source_profile_version
                     approved.context_id = str(run.structured_input["context_id"])
                     approved.strategy = dict(run.structured_output)
                     approved.evidence_refs = {
@@ -146,6 +160,7 @@ class StrategyService:
                         "business_id": str(business.id),
                         "strategy_version": approved.version,
                         "source_agent_run_id": str(run.id),
+                        "source_profile_version": approved.source_profile_version,
                         "context_id": approved.context_id,
                     },
                     occurred_at=now,

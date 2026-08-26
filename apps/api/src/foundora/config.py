@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     model_max_retries: int = 2
     model_timeout_seconds: int = 30
     model_default_max_output_tokens: int = 512
-    model_hard_max_output_tokens: int = 4096
+    model_hard_max_output_tokens: int = 24_000
     model_default_token_budget: int = 8192
     model_default_cost_budget_microusd: int = 100_000
     knowledge_storage_backend: Literal["local"] = "local"

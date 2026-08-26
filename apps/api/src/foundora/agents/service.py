@@ -475,6 +475,22 @@ class AgentService:
             )
             if not approved_fact_refs:
                 raise StrategyEvidenceInvalid
+            profile_versions: set[int] = set()
+            if isinstance(sources, list):
+                for item in sources:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("authority") == "founder_approved_onboarding"
+                        and item.get("source_reference")
+                        == f"approved_business_profiles/{business.id}"
+                    ):
+                        try:
+                            profile_versions.add(int(str(item.get("source_version"))))
+                        except ValueError as error:
+                            raise StrategyEvidenceInvalid from error
+            if len(profile_versions) != 1 or next(iter(profile_versions)) <= 0:
+                raise StrategyEvidenceInvalid
+            approved_profile_version = next(iter(profile_versions))
             async with self._session_factory() as database:
                 research_rows = list(
                     (
@@ -527,6 +543,7 @@ class AgentService:
                     }
                 )
             structured_input["strategy_evidence"] = {
+                "approved_profile_version": approved_profile_version,
                 "approved_fact_refs": approved_fact_refs,
                 "research_runs": pinned_runs,
             }

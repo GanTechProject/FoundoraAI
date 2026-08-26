@@ -29,6 +29,7 @@ class ApprovedStrategyView(BaseModel):
     business_id: uuid.UUID
     version: int
     source_agent_run_id: uuid.UUID
+    source_profile_version: int
     context_id: str
     strategy: dict[str, object]
     evidence_refs: dict[str, object]

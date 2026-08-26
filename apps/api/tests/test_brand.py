@@ -292,6 +292,7 @@ async def test_founder_approval_creates_immutable_active_brand_version() -> None
         business_id=business.id,
         version=1,
         source_agent_run_id=STRATEGY_RUN_ID,
+        source_profile_version=1,
         context_id="c" * 64,
         strategy=STRATEGY,
         evidence_refs={},

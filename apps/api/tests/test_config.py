@@ -46,6 +46,13 @@ def test_session_refresh_interval_adapts_to_short_idle_timeout() -> None:
     assert _idle_refresh_interval(Settings(session_idle_minutes=30)).total_seconds() == 300
 
 
+def test_default_gateway_limit_supports_the_largest_seeded_agent_policy() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.model_hard_max_output_tokens == 24_000
+    assert settings.model_hard_max_output_tokens <= 32_768
+
+
 def test_provider_keys_accept_standard_names_and_stay_masked() -> None:
     settings = Settings(_env_file=None, OPENAI_API_KEY="never-print-this")
 

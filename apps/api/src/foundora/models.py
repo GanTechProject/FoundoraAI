@@ -20,7 +20,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -150,12 +152,12 @@ class BusinessOnboardingDraft(Base):
     problem: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_audience: Mapped[str | None] = mapped_column(Text, nullable=True)
     offer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    goals: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    existing_assets: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    constraints: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    goals: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    existing_assets: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    constraints: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     budget: Mapped[str | None] = mapped_column(Text, nullable=True)
     brand_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
-    connected_services: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    connected_services: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -181,12 +183,12 @@ class ApprovedBusinessProfile(Base):
     problem: Mapped[str] = mapped_column(Text)
     target_audience: Mapped[str] = mapped_column(Text)
     offer: Mapped[str] = mapped_column(Text)
-    goals: Mapped[list[str]] = mapped_column(JSON)
-    existing_assets: Mapped[list[str]] = mapped_column(JSON)
-    constraints: Mapped[list[str]] = mapped_column(JSON)
+    goals: Mapped[list[str]] = mapped_column(JSONB)
+    existing_assets: Mapped[list[str]] = mapped_column(JSONB)
+    constraints: Mapped[list[str]] = mapped_column(JSONB)
     budget: Mapped[str] = mapped_column(Text)
     brand_preferences: Mapped[str] = mapped_column(Text)
-    connected_services: Mapped[list[str]] = mapped_column(JSON)
+    connected_services: Mapped[list[str]] = mapped_column(JSONB)
     approved_by_owner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("owners.id", ondelete="RESTRICT")
     )
@@ -197,6 +199,10 @@ class ApprovedBusinessStrategy(Base):
     __tablename__ = "approved_business_strategies"
     __table_args__ = (
         CheckConstraint("version > 0", name="ck_approved_business_strategies_version"),
+        CheckConstraint(
+            "source_profile_version > 0",
+            name="ck_approved_business_strategies_source_profile_version",
+        ),
         UniqueConstraint("source_agent_run_id", name="uq_approved_business_strategies_source_run"),
     )
 
@@ -207,6 +213,7 @@ class ApprovedBusinessStrategy(Base):
     source_agent_run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agent_runs.id", ondelete="RESTRICT")
     )
+    source_profile_version: Mapped[int] = mapped_column(Integer)
     context_id: Mapped[str] = mapped_column(String(64))
     strategy: Mapped[dict[str, object]] = mapped_column(JSON)
     evidence_refs: Mapped[dict[str, object]] = mapped_column(JSON)
@@ -228,6 +235,12 @@ class ProductOfferVersion(Base):
             "business_id", "version", name="uq_product_offer_versions_business_version"
         ),
         UniqueConstraint("source_agent_run_id", name="uq_product_offer_versions_source_run"),
+        Index(
+            "uq_product_offer_versions_active_business",
+            "business_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -262,6 +275,12 @@ class BrandSystemVersion(Base):
             "business_id", "version", name="uq_brand_system_versions_business_version"
         ),
         UniqueConstraint("source_agent_run_id", name="uq_brand_system_versions_source_run"),
+        Index(
+            "uq_brand_system_versions_active_business",
+            "business_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -301,6 +320,12 @@ class WebsiteSpecificationVersion(Base):
         ),
         UniqueConstraint(
             "source_agent_run_id", name="uq_website_specification_versions_source_run"
+        ),
+        Index(
+            "uq_website_specification_versions_active_business",
+            "business_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
         ),
     )
 
@@ -348,6 +373,12 @@ class WebsiteProjectVersion(Base):
             "business_id", "version", name="uq_website_project_versions_business_version"
         ),
         UniqueConstraint("source_agent_run_id", name="uq_website_project_versions_source_run"),
+        Index(
+            "uq_website_project_versions_active_business",
+            "business_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -1084,9 +1115,7 @@ class KnowledgeSource(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    business_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
-    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"))
     source_type: Mapped[str] = mapped_column(String(24))
     title: Mapped[str] = mapped_column(String(200))
     source_uri: Mapped[str | None] = mapped_column(String(2048), nullable=True)
@@ -1131,9 +1160,7 @@ class KnowledgeDocument(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    business_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
-    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"))
     source_id: Mapped[uuid.UUID] = mapped_column(index=True)
     filename: Mapped[str] = mapped_column(String(255))
     media_type: Mapped[str] = mapped_column(String(120))
@@ -1174,12 +1201,18 @@ class DocumentChunk(Base):
             ondelete="CASCADE",
         ),
         Index("ix_document_chunks_business_document", "business_id", "document_id", "ordinal"),
+        Index(
+            "ix_document_chunks_embedding_cosine",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    business_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    business_id: Mapped[uuid.UUID] = mapped_column()
     source_id: Mapped[uuid.UUID] = mapped_column(index=True)
-    document_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    document_id: Mapped[uuid.UUID] = mapped_column()
     ordinal: Mapped[int] = mapped_column(Integer)
     start_character: Mapped[int] = mapped_column(Integer)
     end_character: Mapped[int] = mapped_column(Integer)
@@ -1273,9 +1306,7 @@ class MemoryProposal(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    business_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
-    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"))
     memory_type: Mapped[str] = mapped_column(String(24))
     epistemic_status: Mapped[str] = mapped_column(String(24))
     title: Mapped[str] = mapped_column(String(200))
@@ -1354,9 +1385,7 @@ class MemoryRecord(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    business_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
-    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"))
     originating_proposal_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("memory_proposals.id", ondelete="RESTRICT"), unique=True
     )
@@ -1402,7 +1431,7 @@ class MemoryRevision(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     memory_id: Mapped[uuid.UUID] = mapped_column(index=True)
-    business_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    business_id: Mapped[uuid.UUID] = mapped_column()
     revision: Mapped[int] = mapped_column(Integer)
     proposal_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("memory_proposals.id", ondelete="RESTRICT"), unique=True
@@ -1435,8 +1464,8 @@ class MemoryProvenance(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
-    memory_id: Mapped[uuid.UUID] = mapped_column(index=True)
-    business_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    memory_id: Mapped[uuid.UUID] = mapped_column()
+    business_id: Mapped[uuid.UUID] = mapped_column()
     revision: Mapped[int] = mapped_column(Integer)
     source_kind: Mapped[str] = mapped_column(String(32))
     source_id: Mapped[str | None] = mapped_column(String(160), nullable=True)

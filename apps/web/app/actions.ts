@@ -8,6 +8,7 @@ import {
   authenticatedApiUpload,
   clearAuthCookies,
   loginApiRequest,
+  modelRequestTimeoutMs,
 } from "../lib/auth";
 
 function field(formData: FormData, name: string): string {
@@ -248,6 +249,7 @@ export async function validateModelProvider(
     response = await authenticatedApiRequest(
       `/ai/providers/${encodeURIComponent(provider)}/validate`,
       {},
+      { timeoutMs: modelRequestTimeoutMs() },
     );
   } catch {
     redirect("/settings/ai?error=unavailable");
@@ -259,16 +261,20 @@ export async function validateModelProvider(
 export async function runModelGatewayCheck(): Promise<never> {
   let response: Response;
   try {
-    response = await authenticatedApiRequest("/ai/generate", {
-      task_type: "gateway.acceptance",
-      prompt: "Reply with exactly FOUNDORA_GATEWAY_OK and nothing else.",
-      system_prompt: "Follow the requested output format exactly.",
-      sensitivity: "standard",
-      allow_fallback: true,
-      max_output_tokens: 32,
-      token_budget: 1024,
-      cost_budget_microusd: 2000,
-    });
+    response = await authenticatedApiRequest(
+      "/ai/generate",
+      {
+        task_type: "gateway.acceptance",
+        prompt: "Reply with exactly FOUNDORA_GATEWAY_OK and nothing else.",
+        system_prompt: "Follow the requested output format exactly.",
+        sensitivity: "standard",
+        allow_fallback: true,
+        max_output_tokens: 32,
+        token_budget: 1024,
+        cost_budget_microusd: 2000,
+      },
+      { timeoutMs: modelRequestTimeoutMs() },
+    );
   } catch {
     redirect("/settings/ai?error=unavailable");
   }

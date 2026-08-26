@@ -252,6 +252,7 @@ def test_event_dashboard_exposes_registered_contract_and_delivery_state() -> Non
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
     payload = response.json()
     assert payload["business_id"] == str(record.event.business_id)
     assert payload["contracts"][0]["consumer_names"] == [AUDIT_CONSUMER.name]

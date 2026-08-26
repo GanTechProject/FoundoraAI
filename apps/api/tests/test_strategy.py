@@ -21,12 +21,13 @@ from foundora.events.contracts import AUDIT_CONSUMER, consumers_for, validate_ev
 from foundora.models import (
     AgentRun,
     AgentVersion,
+    ApprovedBusinessProfile,
     ApprovedBusinessStrategy,
     Business,
     Owner,
     OwnerSession,
 )
-from foundora.strategy.service import StrategyService
+from foundora.strategy.service import StrategyRunInvalid, StrategyService
 
 CONTEXT_ID = "a" * 64
 FACT_REF = "approved_business_profiles/00000000-0000-0000-0000-000000001700"
@@ -40,6 +41,7 @@ def _structured_input() -> dict[str, object]:
         "context_id": CONTEXT_ID,
         "context_sha256": "b" * 64,
         "strategy_evidence": {
+            "approved_profile_version": 1,
             "approved_fact_refs": [FACT_REF],
             "research_runs": [
                 {
@@ -176,6 +178,7 @@ def test_approved_strategy_is_a_versioned_business_brain_source_and_event() -> N
         business_id=business_id,
         version=2,
         source_agent_run_id=uuid.uuid4(),
+        source_profile_version=1,
         context_id=CONTEXT_ID,
         strategy=_output(),
         evidence_refs={
@@ -300,12 +303,16 @@ async def test_founder_approval_revalidates_and_publishes_transactionally() -> N
     )
     database = MagicMock()
     database.begin.return_value = _AsyncContext(None)
+    profile = MagicMock(spec=ApprovedBusinessProfile)
+    profile.version = 1
 
     async def get_record(model: object, _: object, **__: object) -> object | None:
         if model is ApprovedBusinessStrategy:
             return None
         if model is AgentVersion:
             return version
+        if model is ApprovedBusinessProfile:
+            return profile
         return None
 
     database.get = AsyncMock(side_effect=get_record)
@@ -320,12 +327,12 @@ async def test_founder_approval_revalidates_and_publishes_transactionally() -> N
         ),
         patch("foundora.strategy.service.publish_event", new=AsyncMock()) as publish,
     ):
-        approved = await StrategyService(session_factory=session_factory).approve(  # type: ignore[arg-type]
-            context, run_id=run.id, expected_version=0
-        )
+        service = StrategyService(session_factory=session_factory)  # type: ignore[arg-type]
+        approved = await service.approve(context, run_id=run.id, expected_version=0)
 
     assert approved.version == 1
     assert approved.source_agent_run_id == run.id
+    assert approved.source_profile_version == 1
     assert approved.strategy == _output()
     assert approved.evidence_refs == {
         "approved_fact_refs": [FACT_REF],
@@ -337,3 +344,14 @@ async def test_founder_approval_revalidates_and_publishes_transactionally() -> N
     assert event_call["event_type"] == "strategy.approved"
     assert event_call["business_id"] == business.id
     assert event_call["payload"]["strategy_version"] == 1
+    assert event_call["payload"]["source_profile_version"] == 1
+
+    profile.version = 2
+    with (
+        patch(
+            "foundora.strategy.service.resolve_selected_business",
+            new=AsyncMock(return_value=business),
+        ),
+        pytest.raises(StrategyRunInvalid),
+    ):
+        await service.approve(context, run_id=run.id, expected_version=0)

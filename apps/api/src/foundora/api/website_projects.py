@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, model_validator
 
 from foundora.agents.service import (
@@ -162,7 +162,9 @@ def _dashboard_view(value: WebsiteProjectDashboard) -> WebsiteProjectDashboardVi
 @router.get("", response_model=WebsiteProjectDashboardView)
 async def website_project_dashboard(
     context: Annotated[AuthContext, Depends(require_auth)],
+    response: Response,
 ) -> WebsiteProjectDashboardView:
+    response.headers["Cache-Control"] = "no-store"
     return _dashboard_view(await WebsiteProjectService().dashboard(context))
 
 

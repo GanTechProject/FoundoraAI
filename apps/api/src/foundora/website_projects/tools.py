@@ -4,11 +4,13 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import cast
+from urllib.parse import unquote, urlsplit
 
 from foundora.agents.schema import AgentSchemaError
 from foundora.agents.website_coding import WEBSITE_TOOL_IDS, validate_project_path
@@ -25,6 +27,32 @@ _UNSAFE_JAVASCRIPT = re.compile(
     r"(?:\beval\s*\(|\bFunction\s*\(|\bfetch\s*\(|XMLHttpRequest|WebSocket|document\.cookie|localStorage|sessionStorage)",
     re.IGNORECASE,
 )
+_CSS_REFERENCE = re.compile(
+    r"(?:url\(\s*(['\"]?)(?P<url>[^)'\"]+)\1\s*\)|@import\s+(['\"])(?P<import>[^'\"]+)\3)",
+    re.IGNORECASE,
+)
+_JAVASCRIPT_IMPORT = re.compile(
+    r"(?:\bimport\s+(?:[^;]*?\s+from\s+)?|\bexport\s+[^;]*?\s+from\s+)(['\"])(?P<path>[^'\"]+)\1"
+)
+_VOID_HTML_TAGS = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+_ASSET_LINK_RELATIONS = frozenset({"icon", "manifest", "modulepreload", "preload", "stylesheet"})
 
 
 class ControlledWebsiteToolError(Exception):
@@ -54,15 +82,29 @@ class _PageInspector(HTMLParser):
         self.h1_count = 0
         self.ids: list[str] = []
         self.links: list[str] = []
+        self.asset_references: list[str] = []
         self.image_alt_missing = 0
         self._title_depth = 0
         self._anchor_depth = 0
         self._anchor_text: list[str] = []
         self.empty_link_count = 0
         self.text_parts: list[str] = []
+        self.syntax_issues: list[str] = []
+        self._open_tags: list[str] = []
+        self.doctype_count = 0
+        self.inline_scripts: list[str] = []
+        self.inline_styles: list[str] = []
+        self._script_parts: list[str] | None = None
+        self._style_parts: list[str] | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        names = [name for name, _ in attrs]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            self.syntax_issues.append(f"duplicate attributes {', '.join(duplicates)}")
         attributes = dict(attrs)
+        if tag not in _VOID_HTML_TAGS:
+            self._open_tags.append(tag)
         if tag == "html":
             self.lang = attributes.get("lang")
         if tag == "title":
@@ -86,16 +128,65 @@ class _PageInspector(HTMLParser):
             href = attributes.get("href")
             if href:
                 self.links.append(href)
+        if tag == "link":
+            relations = set((attributes.get("rel") or "").lower().split())
+            href = attributes.get("href")
+            if href and relations.intersection(_ASSET_LINK_RELATIONS):
+                self.asset_references.append(href)
+        if tag in {"script", "img", "source", "video", "audio", "iframe"}:
+            source = attributes.get("src")
+            if source:
+                self.asset_references.append(source)
+        if tag == "script" and not attributes.get("src"):
+            self._script_parts = []
+        if tag == "style":
+            self._style_parts = []
+        if tag == "video" and attributes.get("poster"):
+            self.asset_references.append(cast(str, attributes["poster"]))
+        if tag == "object" and attributes.get("data"):
+            self.asset_references.append(cast(str, attributes["data"]))
         if tag == "img" and not (attributes.get("alt") or "").strip():
             self.image_alt_missing += 1
 
     def handle_endtag(self, tag: str) -> None:
+        if tag not in _VOID_HTML_TAGS:
+            if not self._open_tags:
+                self.syntax_issues.append(f"unexpected closing tag </{tag}>")
+            elif self._open_tags[-1] != tag:
+                self.syntax_issues.append(
+                    f"closing tag </{tag}> does not match <{self._open_tags[-1]}>"
+                )
+            else:
+                self._open_tags.pop()
+        if tag == "script" and self._script_parts is not None:
+            self.inline_scripts.append("".join(self._script_parts))
+            self._script_parts = None
+        if tag == "style" and self._style_parts is not None:
+            self.inline_styles.append("".join(self._style_parts))
+            self._style_parts = None
         if tag == "title" and self._title_depth:
             self._title_depth -= 1
         if tag == "a" and self._anchor_depth:
             if not "".join(self._anchor_text).strip():
                 self.empty_link_count += 1
             self._anchor_depth -= 1
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in _VOID_HTML_TAGS:
+            self.handle_endtag(tag)
+
+    def handle_decl(self, decl: str) -> None:
+        if decl.strip().casefold() == "doctype html":
+            self.doctype_count += 1
+        else:
+            self.syntax_issues.append("unsupported declaration")
+
+    def finish(self) -> None:
+        if self._open_tags:
+            self.syntax_issues.append(f"unclosed tag <{self._open_tags[-1]}>")
+        if self.doctype_count != 1:
+            self.syntax_issues.append("exactly one HTML5 doctype is required")
 
     def handle_data(self, data: str) -> None:
         if self._title_depth:
@@ -104,6 +195,10 @@ class _PageInspector(HTMLParser):
             self._anchor_text.append(data)
         if data.strip():
             self.text_parts.append(data)
+        if self._script_parts is not None:
+            self._script_parts.append(data)
+        if self._style_parts is not None:
+            self._style_parts.append(data)
 
     @property
     def title(self) -> str:
@@ -152,16 +247,103 @@ def _route_file(route: str) -> str:
     return f"{route.strip('/')}/index.html"
 
 
-def _balanced(value: str, opening: str, closing: str) -> bool:
-    depth = 0
-    for character in value:
-        if character == opening:
-            depth += 1
-        elif character == closing:
-            depth -= 1
-            if depth < 0:
-                return False
-    return depth == 0
+def _local_reference(reference: str, source_path: str) -> str | None:
+    parsed = urlsplit(reference.strip())
+    if parsed.scheme == "data":
+        return None
+    if parsed.scheme or parsed.netloc:
+        raise ControlledWebsiteToolError(f"{source_path}: unsupported asset reference {reference}")
+    raw_path = unquote(parsed.path)
+    if not raw_path:
+        return None
+    parts: list[str] = []
+    candidates = (
+        PurePosixPath(raw_path.lstrip("/")).parts
+        if raw_path.startswith("/")
+        else (PurePosixPath(source_path).parent / raw_path).parts
+    )
+    for part in candidates:
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            if not parts:
+                raise ControlledWebsiteToolError(
+                    f"{source_path}: asset reference escapes the project root"
+                )
+            parts.pop()
+        else:
+            parts.append(part)
+    return "/".join(parts)
+
+
+def _validate_asset_reference(
+    reference: str, source_path: str, source_paths: set[str], lint_issues: list[str]
+) -> None:
+    target = _local_reference(reference, source_path)
+    if target is not None and target not in source_paths:
+        lint_issues.append(f"{source_path}: referenced asset {reference} does not resolve")
+
+
+def _css_syntax_issue(value: str) -> str | None:
+    stack: list[str] = []
+    pairs = {")": "(", "]": "[", "}": "{"}
+    quote: str | None = None
+    escaped = False
+    in_comment = False
+    index = 0
+    while index < len(value):
+        character = value[index]
+        following = value[index + 1] if index + 1 < len(value) else ""
+        if in_comment:
+            if character == "*" and following == "/":
+                in_comment = False
+                index += 2
+                continue
+        elif quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+        elif character == "/" and following == "*":
+            in_comment = True
+            index += 2
+            continue
+        elif character in {"'", '"'}:
+            quote = character
+        elif character in "([{":
+            stack.append(character)
+        elif character in pairs:
+            if not stack or stack.pop() != pairs[character]:
+                return "mismatched delimiter"
+        index += 1
+    if in_comment:
+        return "unterminated comment"
+    if quote is not None:
+        return "unterminated string"
+    if stack:
+        return "unclosed delimiter"
+    if re.search(r"(?:^|[;{])\s*[-\w]+\s*:\s*(?:;|})", value):
+        return "empty declaration value"
+    return None
+
+
+def _javascript_syntax_issue(value: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["node", "--check", "--input-type=module"],
+            input=value,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError) as error:
+        raise ControlledWebsiteToolError(
+            "The JavaScript syntax validator is unavailable"
+        ) from error
+    return result.returncode != 0
 
 
 class ControlledWebsiteBuilder:
@@ -269,7 +451,10 @@ class ControlledWebsiteBuilder:
             inspector = _PageInspector()
             inspector.feed(content)
             inspector.close()
+            inspector.finish()
             inspectors[route] = inspector
+            if inspector.syntax_issues:
+                lint_issues.append(f"{path}: malformed HTML ({inspector.syntax_issues[0]})")
             duplicates = sorted({item for item in inspector.ids if inspector.ids.count(item) > 1})
             if duplicates:
                 lint_issues.append(f"{path}: duplicate ids {', '.join(duplicates)}")
@@ -296,16 +481,36 @@ class ControlledWebsiteBuilder:
                 if target.startswith("/") and target not in route_files:
                     lint_issues.append(f"{path}: internal link {href} does not resolve")
 
+        source_paths = set(source_by_path)
+        for path, inspector in ((route_files[route], item) for route, item in inspectors.items()):
+            for reference in inspector.asset_references:
+                _validate_asset_reference(reference, path, source_paths, lint_issues)
+            for script in inspector.inline_scripts:
+                if _javascript_syntax_issue(script):
+                    lint_issues.append(f"{path}: invalid inline JavaScript syntax")
+            for style in inspector.inline_styles:
+                if issue := _css_syntax_issue(style):
+                    lint_issues.append(f"{path}: invalid inline CSS ({issue})")
+                for match in _CSS_REFERENCE.finditer(style):
+                    reference = match.group("url") or match.group("import")
+                    _validate_asset_reference(reference, path, source_paths, lint_issues)
+
         for item in source_files:
             path = cast(str, item["path"])
             content = cast(str, item["content"])
-            if path.endswith(".css") and not _balanced(content, "{", "}"):
-                lint_issues.append(f"{path}: unbalanced CSS block")
+            if path.endswith(".css"):
+                if issue := _css_syntax_issue(content):
+                    lint_issues.append(f"{path}: invalid CSS syntax ({issue})")
+                for match in _CSS_REFERENCE.finditer(content):
+                    reference = match.group("url") or match.group("import")
+                    _validate_asset_reference(reference, path, source_paths, lint_issues)
             if path.endswith(".js"):
-                if not _balanced(content, "{", "}"):
-                    lint_issues.append(f"{path}: unbalanced JavaScript block")
+                if _javascript_syntax_issue(content):
+                    lint_issues.append(f"{path}: invalid JavaScript syntax")
                 if _UNSAFE_JAVASCRIPT.search(content):
                     lint_issues.append(f"{path}: disallowed dynamic or network JavaScript")
+                for match in _JAVASCRIPT_IMPORT.finditer(content):
+                    _validate_asset_reference(match.group("path"), path, source_paths, lint_issues)
 
         titles = [item.title.casefold() for item in inspectors.values()]
         descriptions = [(item.description or "").strip().casefold() for item in inspectors.values()]
@@ -406,7 +611,7 @@ class ControlledWebsiteBuilder:
             build_manifest=build_manifest,
             build_report={
                 "status": "passed",
-                "builder": "foundora.controlled-static-build@1",
+                "builder": "foundora.controlled-static-build@2",
                 "source_file_count": len(source_files),
                 "build_file_count": len(build_manifest),
                 "source_digest": source_digest,

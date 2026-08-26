@@ -3,13 +3,13 @@ from __future__ import annotations
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from foundora.agents.recovery import MAX_WORKER_RECOVERIES, _recover_stale_state
-from foundora.agents.runtime import AgentRuntime, ExecutionClaim
+from foundora.agents.runtime import AgentRuntime, ExecutionClaim, SqlRuntimeRepository
 from foundora.agents.schema import AgentSchemaError, validate_schema
 from foundora.agents.service import (
     AgentDashboard,
@@ -18,9 +18,11 @@ from foundora.agents.service import (
     SkillNotAssigned,
     _agent_job_id,
 )
+from foundora.agents.website_coding import WEBSITE_CODING_AGENT_ID, WEBSITE_TOOL_IDS
 from foundora.api.agents import _run_view
 from foundora.api.auth import require_auth, require_csrf
 from foundora.auth.service import AuthContext
+from foundora.governance.service import ActionRecord, GovernanceService
 from foundora.main import app
 from foundora.model_gateway.service import GatewayResult
 from foundora.model_gateway.types import ProviderFailure
@@ -32,6 +34,17 @@ from foundora.models import (
     Owner,
     OwnerSession,
 )
+
+
+class _AsyncContext:
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    async def __aenter__(self) -> object:
+        return self.value
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
 
 
 def auth_context(business_id: uuid.UUID) -> AuthContext:
@@ -271,6 +284,55 @@ async def test_agent_runtime_rejects_skill_that_requires_tools() -> None:
         "agent_schema_invalid",
         "Assigned skill requires unsupported tools",
     )
+
+
+@pytest.mark.asyncio
+async def test_website_tools_are_authorized_by_the_durable_policy_engine() -> None:
+    run_id = uuid.uuid4()
+    business_id = uuid.uuid4()
+    run = AgentRun(
+        id=run_id,
+        business_id=business_id,
+        agent_id=WEBSITE_CODING_AGENT_ID,
+        status="running",
+    )
+    database = MagicMock()
+    database.scalar = AsyncMock(return_value=run)
+    database.begin.return_value = _AsyncContext(None)
+    session_factory = MagicMock(return_value=_AsyncContext(database))
+    governance = MagicMock(spec=GovernanceService)
+    governance.evaluate_in_session = AsyncMock(
+        side_effect=[
+            ActionRecord(action=MagicMock(status="authorized"), approval=None)
+            for _ in WEBSITE_TOOL_IDS
+        ]
+    )
+    repository = SqlRuntimeRepository(
+        session_factory=session_factory,  # type: ignore[arg-type]
+        governance=governance,
+    )
+
+    assert await repository.authorize_website_build(run_id) is True
+    assert governance.evaluate_in_session.await_count == len(WEBSITE_TOOL_IDS)
+    for tool_id, call in zip(
+        WEBSITE_TOOL_IDS,
+        governance.evaluate_in_session.await_args_list,
+        strict=True,
+    ):
+        assert call.kwargs == {
+            "business_id": business_id,
+            "action_type": "internal.content.create",
+            "actor_type": "agent",
+            "actor_id": WEBSITE_CODING_AGENT_ID,
+            "tool_id": tool_id,
+            "execution_mode": "manual",
+            "data_classification": "confidential",
+            "requested_spend_microusd": 0,
+            "frequency_key": f"website-build:{run_id}",
+            "target": f"website-project:{business_id}",
+            "idempotency_key": f"agent-run:{run_id}:website-tool:{tool_id}",
+            "created_by_owner_id": None,
+        }
 
 
 @pytest.mark.asyncio
