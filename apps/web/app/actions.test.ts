@@ -31,8 +31,11 @@ vi.mock("../lib/auth", () => ({
 
 import {
   approveStrategy,
+  cancelSandboxExecution,
   decideGovernanceApproval,
+  requestSandboxExecution,
   runModelGatewayCheck,
+  startSandboxExecution,
   startWebsiteProject,
   validateModelProvider,
 } from "./actions";
@@ -123,6 +126,46 @@ describe("server action contracts", () => {
         reason: "Reviewed against the active policy",
         idempotency_key: expect.stringMatching(/^ui:approval:approval\/1:/),
       }),
+    );
+  });
+
+  it("uses bounded sandbox mutations and preserves encoded execution identity", async () => {
+    auth.request.mockResolvedValue(
+      new Response(JSON.stringify({ id: "execution/1" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expectRedirect(
+      requestSandboxExecution(),
+      "/sandbox?execution=execution%2F1&updated=requested",
+    );
+    expect(auth.request).toHaveBeenLastCalledWith(
+      "/sandbox/executions",
+      { idempotency_key: expect.stringMatching(/^ui:sandbox:/) },
+      { timeoutMs: 15_000 },
+    );
+
+    auth.request.mockResolvedValue(new Response(null, { status: 202 }));
+    await expectRedirect(
+      startSandboxExecution("execution/1"),
+      "/sandbox?execution=execution%2F1&updated=queued",
+    );
+    expect(auth.request).toHaveBeenLastCalledWith(
+      "/sandbox/executions/execution%2F1/start",
+      undefined,
+      { timeoutMs: 15_000 },
+    );
+
+    await expectRedirect(
+      cancelSandboxExecution("execution/1"),
+      "/sandbox?execution=execution%2F1&updated=cancelled",
+    );
+    expect(auth.request).toHaveBeenLastCalledWith(
+      "/sandbox/executions/execution%2F1/cancel",
+      undefined,
+      { timeoutMs: 15_000 },
     );
   });
 });

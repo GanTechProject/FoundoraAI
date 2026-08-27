@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Environment probe</title></head>
+  <body>
+    <main><h1>Environment probe fixture</h1></main>
+    <script>
+      Promise.allSettled([
+        fetch("http://api:8000/health/ready"),
+        fetch("http://postgres:5432/"),
+        fetch("http://redis:6379/"),
+        fetch("http://sandbox-runner/"),
+      ]);
+    </script>
+  </body>
+</html>

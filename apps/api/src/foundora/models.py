@@ -7,6 +7,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -410,6 +411,167 @@ class WebsiteProjectVersion(Base):
     tool_audit: Mapped[list[dict[str, object]]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SandboxProfile(Base):
+    __tablename__ = "sandbox_profiles"
+    __table_args__ = (
+        CheckConstraint("version > 0", name="ck_sandbox_profiles_version"),
+        CheckConstraint(
+            "harness_contract_version > 0",
+            name="ck_sandbox_profiles_harness_contract_version",
+        ),
+        CheckConstraint(
+            "cpu_nanos > 0 AND memory_bytes > 0 AND memory_swap_bytes >= memory_bytes "
+            "AND pids_limit > 0 AND wall_timeout_seconds > 0 "
+            "AND termination_grace_seconds > 0 AND tmpfs_bytes > 0 "
+            "AND dev_shm_bytes > 0 AND combined_output_bytes > 0",
+            name="ck_sandbox_profiles_resource_limits",
+        ),
+    )
+
+    profile_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    harness_contract_version: Mapped[int] = mapped_column(Integer)
+    runtime_image_contract_key: Mapped[str] = mapped_column(String(80))
+    runtime_build_manifest_sha256: Mapped[str] = mapped_column(String(64))
+    cpu_nanos: Mapped[int] = mapped_column(BigInteger)
+    memory_bytes: Mapped[int] = mapped_column(BigInteger)
+    memory_swap_bytes: Mapped[int] = mapped_column(BigInteger)
+    pids_limit: Mapped[int] = mapped_column(Integer)
+    wall_timeout_seconds: Mapped[int] = mapped_column(Integer)
+    termination_grace_seconds: Mapped[int] = mapped_column(Integer)
+    tmpfs_bytes: Mapped[int] = mapped_column(BigInteger)
+    dev_shm_bytes: Mapped[int] = mapped_column(BigInteger)
+    combined_output_bytes: Mapped[int] = mapped_column(BigInteger)
+    network_mode: Mapped[str] = mapped_column(String(16))
+    read_only_root_filesystem: Mapped[bool] = mapped_column(Boolean)
+    source_read_only: Mapped[bool] = mapped_column(Boolean)
+    run_as_non_root: Mapped[bool] = mapped_column(Boolean)
+    drop_all_capabilities: Mapped[bool] = mapped_column(Boolean)
+    add_sys_chroot_capability: Mapped[bool] = mapped_column(Boolean)
+    no_new_privileges: Mapped[bool] = mapped_column(Boolean)
+    no_host_namespaces: Mapped[bool] = mapped_column(Boolean)
+    no_devices: Mapped[bool] = mapped_column(Boolean)
+    allowed_project_kind: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SandboxExecution(Base):
+    __tablename__ = "sandbox_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "website_project_version > 0", name="ck_sandbox_executions_project_version"
+        ),
+        CheckConstraint(
+            "website_specification_version > 0",
+            name="ck_sandbox_executions_specification_version",
+        ),
+        CheckConstraint("profile_version > 0", name="ck_sandbox_executions_profile_version"),
+        CheckConstraint(
+            "harness_contract_version > 0",
+            name="ck_sandbox_executions_harness_contract_version",
+        ),
+        CheckConstraint(
+            "status IN ('requested', 'waiting_approval', 'queued', 'authorizing', "
+            "'running', 'cleaning', 'rejected', 'succeeded', 'failed', 'cancelled', "
+            "'timed_out', 'resource_exhausted', 'infrastructure_failed', 'cleanup_failed')",
+            name="ck_sandbox_executions_status",
+        ),
+        CheckConstraint(
+            "worker_recovery_count BETWEEN 0 AND 3 AND cleanup_attempts BETWEEN 0 AND 10 "
+            "AND (final_labeled_resource_count IS NULL OR final_labeled_resource_count >= 0)",
+            name="ck_sandbox_executions_counts",
+        ),
+        CheckConstraint(
+            "cleanup_status IN ('pending', 'verified', 'failed')",
+            name="ck_sandbox_executions_cleanup_status",
+        ),
+        CheckConstraint(
+            "status <> 'succeeded' OR (cleanup_status = 'verified' "
+            "AND final_labeled_resource_count = 0)",
+            name="ck_sandbox_executions_truthful_success",
+        ),
+        CheckConstraint(
+            "status <> 'cleanup_failed' OR cleanup_status = 'failed'",
+            name="ck_sandbox_executions_cleanup_failure",
+        ),
+        UniqueConstraint(
+            "business_id", "idempotency_key", name="uq_sandbox_executions_idempotency"
+        ),
+        UniqueConstraint("governance_action_id", name="uq_sandbox_executions_governance_action"),
+        ForeignKeyConstraint(
+            ["profile_id", "profile_version"],
+            ["sandbox_profiles.profile_id", "sandbox_profiles.version"],
+            ondelete="RESTRICT",
+            name="fk_sandbox_executions_profile",
+        ),
+        Index("ix_sandbox_executions_business_created", "business_id", "created_at"),
+        Index("ix_sandbox_executions_business_status", "business_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    business_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"), index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    website_project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("website_project_versions.id", ondelete="RESTRICT"), index=True
+    )
+    website_project_version: Mapped[int] = mapped_column(Integer)
+    website_specification_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("website_specification_versions.id", ondelete="RESTRICT"), index=True
+    )
+    website_specification_version: Mapped[int] = mapped_column(Integer)
+    source_digest: Mapped[str] = mapped_column(String(64))
+    build_digest: Mapped[str] = mapped_column(String(64))
+    source_archive_sha256: Mapped[str] = mapped_column(String(64))
+    source_archive_size_bytes: Mapped[int] = mapped_column(Integer)
+    routes: Mapped[list[str]] = mapped_column(JSONB)
+    profile_id: Mapped[str] = mapped_column(String(64))
+    profile_version: Mapped[int] = mapped_column(Integer)
+    harness_contract_version: Mapped[int] = mapped_column(Integer)
+    runtime_image_id: Mapped[str | None] = mapped_column(String(71), nullable=True)
+    request_digest: Mapped[str] = mapped_column(String(64))
+    governance_action_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("governance_actions.id", ondelete="RESTRICT"), index=True
+    )
+    policy_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("policy_versions.id", ondelete="RESTRICT"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(24))
+    worker_recovery_count: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    effective_limits: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    effective_limits_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    termination_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    route_results: Mapped[list[dict[str, object]] | None] = mapped_column(JSONB, nullable=True)
+    process_results: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    stdout_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stderr_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stdout_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stderr_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cleanup_status: Mapped[str] = mapped_column(String(16), default="pending")
+    cleanup_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    cleanup_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cleanup_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    final_labeled_resource_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cleanup_receipt_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Agent(Base):

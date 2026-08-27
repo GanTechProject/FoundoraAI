@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Output exhaustion</title></head>
+  <body>
+    <main><h1>Output exhaustion fixture</h1></main>
+    <script>
+      for (let index = 0; index < 100000; index += 1) {
+        console.error(`foundora-output-fixture-${index}-${"x".repeat(1000)}`);
+      }
+    </script>
+  </body>
+</html>

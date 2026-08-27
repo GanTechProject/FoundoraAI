@@ -59,3 +59,14 @@ def test_provider_keys_accept_standard_names_and_stay_masked() -> None:
     assert settings.openai_api_key is not None
     assert settings.openai_api_key.get_secret_value() == "never-print-this"
     assert "never-print-this" not in repr(settings)
+
+
+def test_sandbox_runner_token_is_bounded_and_stays_masked() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, sandbox_runner_token="short")
+
+    token = "sandbox-runner-secret-000000000001"
+    settings = Settings(_env_file=None, sandbox_runner_token=token)
+    assert settings.sandbox_runner_token is not None
+    assert settings.sandbox_runner_token.get_secret_value() == token
+    assert token not in repr(settings)

@@ -58,6 +58,9 @@ export default async function WebsiteProjectsPage({
           <Link className="text-link" href="/website-specifications">
             Website specification
           </Link>
+          <Link className="text-link" href="/sandbox">
+            Sandbox
+          </Link>
           <Link className="text-link" href="/agents">
             Agents
           </Link>

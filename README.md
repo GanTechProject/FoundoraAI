@@ -226,8 +226,22 @@ the build tree, and compute tests, lint, accessibility, technical SEO, performan
 source hashes, and build hashes. A project version is persisted and published as
 `website_project.built` only when every computed check passes; the Business Brain exposes
 only its bounded build metadata. Generated commands and package scripts are never
-executed, and deployment, publication, domains, providers, production credentials, and
-the Phase 22 sandbox remain absent. The schema head is `20260825_21`.
+executed by Phase 21, and deployment, publication, domains, providers, and production
+credentials remain absent. Phase 22 now provides strict sandbox contracts,
+a digest-pinned non-root browser runtime, immutable profile/execution persistence,
+exact artifact request pinning, explicit R2 governance, and an authenticated isolated
+runner on a private control network. The runner owns fixed child creation, pre-start
+engine inspection, atomic receipts, idempotent replay, cancellation, bounded evidence,
+verified cleanup, startup/periodic orphan reconciliation, deterministic RQ delivery,
+forced execution-time governance rechecks, heartbeats, cancellation, strict evidence
+persistence, bounded receipt-first worker recovery, transactional terminal events,
+safe operational metrics/logging, runner readiness, and recovery drills. Its repeated
+adversarial matrix verifies CPU, memory, PID, timeout, filesystem, network, credential,
+output, governance, idempotency, interruption, and zero-resource cleanup boundaries;
+the final runtime and runner images scan with zero high/critical findings. The
+protected `/sandbox` owner surface supports governed request, approval linkage, start,
+cancellation, selected-business history, and safe bounded evidence inspection. Phase
+22 is complete, Phase 23 remains untouched, and the schema head is `20260827_22`.
 
 Local sessions use `HttpOnly`, `SameSite=Strict` cookies. A session expires after 30 minutes without activity and absolutely after eight hours. Production configuration is rejected unless the public origin uses HTTPS and secure cookies are enabled.
 

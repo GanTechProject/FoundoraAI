@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,6 +22,7 @@ from foundora.models import (
     GovernanceToolPermission,
     Owner,
     OwnerSession,
+    PolicyVersion,
 )
 
 ORIGIN = "http://localhost:3000"
@@ -177,6 +178,79 @@ def test_live_controls_block_killed_disabled_or_over_budget_actions() -> None:
         )[0]
         == "denied"
     )
+
+
+@pytest.mark.asyncio
+async def test_force_recheck_blocks_previously_authorized_action_after_kill_switch() -> None:
+    now = datetime.now(UTC)
+    business_id = uuid.uuid4()
+    policy_version = PolicyVersion(
+        id=uuid.uuid4(),
+        policy_id="foundora-default-governance",
+        version=1,
+        description="test",
+        rules={},
+        created_at=now,
+    )
+    action = GovernanceAction(
+        id=uuid.uuid4(),
+        business_id=business_id,
+        policy_version_id=policy_version.id,
+        workflow_run_id=None,
+        workflow_step_key=None,
+        action_type="internal.code.execute",
+        actor_type="owner",
+        actor_id=None,
+        tool_id="foundora.sandbox.website",
+        risk_class="R2",
+        execution_mode="manual",
+        data_classification="internal",
+        requested_spend_microusd=0,
+        frequency_key="sandbox",
+        target="sandbox:test",
+        status="authorized",
+        rationale="Previously authorized",
+        idempotency_key="sandbox:test",
+        created_by_owner_id=None,
+        created_at=now,
+        updated_at=now,
+        authorized_at=now,
+    )
+    database = AsyncMock()
+    database.scalar.side_effect = [action, None]
+    service = GovernanceService(session_factory=MagicMock())
+
+    with (
+        patch.object(
+            service,
+            "_policy",
+            new=AsyncMock(return_value=(MagicMock(), policy_version)),
+        ),
+        patch.object(
+            service,
+            "_defaults",
+            new=AsyncMock(return_value=(controls(killed=True), settings(), [permission()])),
+        ),
+        patch.object(
+            service,
+            "_authorized_spend_today",
+            new=AsyncMock(return_value=0),
+        ),
+        patch("foundora.governance.service._add_audit", new=AsyncMock()) as add_audit,
+    ):
+        result = await service.authorize_in_session(
+            database,
+            business_id=business_id,
+            action_id=action.id,
+            idempotency_key="sandbox:test:runtime-recheck",
+            owner_id=None,
+            force_recheck=True,
+        )
+
+    assert result.action.status == "blocked"
+    assert result.action.authorized_at is None
+    assert result.action.rationale == "The global kill switch is engaged"
+    add_audit.assert_awaited_once()
 
 
 def test_autonomous_execution_defaults_off() -> None:

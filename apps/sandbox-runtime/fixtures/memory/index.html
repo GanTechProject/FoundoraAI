@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Memory exhaustion</title></head>
+  <body>
+    <main><h1>Memory exhaustion fixture</h1></main>
+    <script>
+      const retained = [];
+      for (;;) retained.push(new Uint8Array(16 * 1024 * 1024));
+    </script>
+  </body>
+</html>

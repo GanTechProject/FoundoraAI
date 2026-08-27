@@ -111,6 +111,18 @@ function Invoke-WithTransientHttpRetry {
     throw "Transient HTTP request exhausted its bounded retries"
 }
 
+function Assert-SandboxOperationsHealthy {
+    Invoke-Checked { docker compose exec -T sandbox-runner node src/healthcheck.mjs }
+    $managedContainers = @(docker ps --all --quiet --filter "label=foundora.sandbox.managed=true")
+    if ($LASTEXITCODE -ne 0 -or @($managedContainers | Where-Object { $_ }).Count -ne 0) {
+        throw "Sandbox smoke found a residual managed child container"
+    }
+    $managedVolumes = @(docker volume ls --quiet --filter "label=foundora.sandbox.managed=true")
+    if ($LASTEXITCODE -ne 0 -or @($managedVolumes | Where-Object { $_ }).Count -ne 0) {
+        throw "Sandbox smoke found a residual managed source volume"
+    }
+}
+
 Invoke-Checked { docker compose up --build --detach --wait }
 
 $apiPort = if ($env:API_PORT) { $env:API_PORT } else { "8000" }
@@ -120,6 +132,7 @@ $publicOrigin = "http://localhost:$webPort"
 
 $readiness = Invoke-RestMethod -Uri "$apiOrigin/health/ready"
 if ($readiness.status -ne "ready") { throw "API readiness did not report ready" }
+Assert-SandboxOperationsHealthy
 
 Assert-HttpStatus -ExpectedStatus 401 -Request {
     Invoke-WebRequest -UseBasicParsing -Uri "$apiOrigin/auth/session"
@@ -2823,9 +2836,10 @@ Invoke-Checked { docker compose exec -T postgres pg_isready -U foundora -d found
 Invoke-Checked { docker compose exec -T redis redis-cli ping }
 $migrationVersion = docker compose exec -T postgres psql -U foundora -d foundora -tAc `
     "SELECT version_num FROM alembic_version"
-if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260826_21_01") {
+if ($LASTEXITCODE -ne 0 -or $migrationVersion.Trim() -ne "20260827_22") {
     throw "Review-hardening migration is not current"
 }
 Invoke-Checked { docker compose exec -T worker python -m foundora.worker_health }
+Assert-SandboxOperationsHealthy
 
 Invoke-Checked { docker compose ps }

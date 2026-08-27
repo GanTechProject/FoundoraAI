@@ -39,6 +39,12 @@ ACTION_CATALOG = {
             "Creates an internal draft without external publication.",
         ),
         ActionDescriptor(
+            "internal.code.execute",
+            "Isolated code execution",
+            "R2",
+            "Executes approved generated code in the isolated sandbox runtime.",
+        ),
+        ActionDescriptor(
             "external.reversible",
             "Reversible external action",
             "R2",
@@ -101,6 +107,7 @@ TOOL_CATALOG = {
             "foundora.dependencies.website", "Reviewed website dependencies", "R1", True
         ),
         ToolDescriptor("foundora.checks.website", "Website build checks", "R1", True),
+        ToolDescriptor("foundora.sandbox.website", "Isolated website sandbox", "R2", True),
     )
 }
 

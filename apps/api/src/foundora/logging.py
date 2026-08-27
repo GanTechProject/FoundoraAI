@@ -10,7 +10,22 @@ correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlatio
 
 
 class JsonFormatter(logging.Formatter):
-    _extra_fields = ("event", "http_method", "http_path", "http_status", "duration_ms")
+    _extra_fields = (
+        "event",
+        "http_method",
+        "http_path",
+        "http_status",
+        "duration_ms",
+        "sandbox_execution_id",
+        "sandbox_outcome",
+        "sandbox_duration_ms",
+        "sandbox_cleanup_status",
+        "sandbox_cleanup_attempts",
+        "sandbox_remaining_resources",
+        "sandbox_worker_recoveries",
+        "sandbox_recovered",
+        "sandbox_failed",
+    )
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {

@@ -22,3 +22,6 @@ Invoke-Checked { docker compose --profile quality run --rm web-quality npm run l
 Invoke-Checked { docker compose --profile quality run --rm web-quality npm run typecheck }
 Invoke-Checked { docker compose --profile quality run --rm web-quality npm run test }
 Invoke-Checked { docker compose --profile quality run --rm web-quality npm run build }
+
+Invoke-Checked { & "$PSScriptRoot/test-sandbox-runtime.ps1" }
+Invoke-Checked { & "$PSScriptRoot/test-sandbox-runner.ps1" }

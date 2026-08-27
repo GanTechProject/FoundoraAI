@@ -25,6 +25,7 @@ from foundora.api.memory import router as memory_router
 from foundora.api.model_gateway import router as model_gateway_router
 from foundora.api.onboarding import router as onboarding_router
 from foundora.api.product_offers import router as product_offers_router
+from foundora.api.sandbox import router as sandbox_router
 from foundora.api.strategy import router as strategy_router
 from foundora.api.tasks import router as tasks_router
 from foundora.api.website_projects import router as website_projects_router
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
     application.include_router(brand_router)
     application.include_router(website_specifications_router)
     application.include_router(website_projects_router)
+    application.include_router(sandbox_router)
     return application
 
 

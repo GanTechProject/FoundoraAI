@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Process exhaustion</title>
+  </head>
+  <body>
+    <main><h1>Process exhaustion fixture</h1></main>
+    <script>
+      const workerSource = "setInterval(() => {}, 60000)";
+      const workerUrl = URL.createObjectURL(
+        new Blob([workerSource], { type: "text/javascript" }),
+      );
+      globalThis.__workers = Array.from(
+        { length: 512 },
+        () => new Worker(workerUrl),
+      );
+      throw new Error("foundora-process-exhaustion-attempted");
+    </script>
+  </body>
+</html>

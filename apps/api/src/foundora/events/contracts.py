@@ -267,6 +267,99 @@ EVENT_CONTRACTS: Mapping[str, EventContract] = MappingProxyType(
                 ],
             ),
         ),
+        "sandbox.execution.finished": EventContract(
+            event_type="sandbox.execution.finished",
+            schema_version=1,
+            aggregate_type="sandbox_execution",
+            description=(
+                "An isolated website execution reached a durable terminal outcome "
+                "with terminal cleanup evidence."
+            ),
+            payload_schema=_schema(
+                {
+                    "business_id": {"type": "string", "format": "uuid"},
+                    "sandbox_execution_id": {"type": "string", "format": "uuid"},
+                    "website_project_id": {"type": "string", "format": "uuid"},
+                    "website_project_version": {"type": "integer", "minimum": 1},
+                    "profile_id": {"const": "static-website"},
+                    "profile_version": {"const": 1},
+                    "outcome": {
+                        "enum": [
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                            "timed_out",
+                            "resource_exhausted",
+                            "infrastructure_failed",
+                            "cleanup_failed",
+                        ]
+                    },
+                    "termination_reason": {
+                        "type": ["string", "null"],
+                        "maxLength": 120,
+                    },
+                    "duration_ms": {
+                        "type": ["integer", "null"],
+                        "minimum": 0,
+                        "maximum": 120000,
+                    },
+                    "runtime_image_id": {
+                        "type": ["string", "null"],
+                        "pattern": "^sha256:[a-f0-9]{64}$",
+                    },
+                    "effective_limits_digest": {
+                        "type": ["string", "null"],
+                        "pattern": "^[a-f0-9]{64}$",
+                    },
+                    "cleanup_status": {"enum": ["verified", "failed"]},
+                    "cleanup_attempts": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                    },
+                    "final_labeled_resource_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                    },
+                    "cleanup_receipt_digest": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$",
+                    },
+                    "governance_action_id": {"type": "string", "format": "uuid"},
+                    "policy_version_id": {"type": "string", "format": "uuid"},
+                    "request_digest": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$",
+                    },
+                    "worker_recovery_count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3,
+                    },
+                },
+                [
+                    "business_id",
+                    "sandbox_execution_id",
+                    "website_project_id",
+                    "website_project_version",
+                    "profile_id",
+                    "profile_version",
+                    "outcome",
+                    "termination_reason",
+                    "duration_ms",
+                    "runtime_image_id",
+                    "effective_limits_digest",
+                    "cleanup_status",
+                    "cleanup_attempts",
+                    "final_labeled_resource_count",
+                    "cleanup_receipt_digest",
+                    "governance_action_id",
+                    "policy_version_id",
+                    "request_digest",
+                    "worker_recovery_count",
+                ],
+            ),
+        ),
         "knowledge.source_registered": EventContract(
             event_type="knowledge.source_registered",
             schema_version=1,

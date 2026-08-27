@@ -12,19 +12,23 @@ from foundora.config import get_settings
 from foundora.events.service import dispatch_pending_events
 from foundora.infrastructure.database import close_database
 from foundora.logging import configure_logging
+from foundora.sandbox.recovery import recover_sandbox_executions
 from foundora.workflows.recovery import recover_workflow_runs
 
 
-async def _recover_and_close() -> tuple[int, int, int, int, int, int, int]:
+async def _recover_and_close() -> tuple[int, int, int, int, int, int, int, int, int]:
     try:
         agent_recovered, agent_failed = await recover_agent_runs()
         workflow_recovered, workflow_failed = await recover_workflow_runs()
+        sandbox_recovered, sandbox_failed = await recover_sandbox_executions()
         event_summary = await dispatch_pending_events(limit=100)
         return (
             agent_recovered,
             agent_failed,
             workflow_recovered,
             workflow_failed,
+            sandbox_recovered,
+            sandbox_failed,
             event_summary.completed,
             event_summary.retry_scheduled,
             event_summary.dead_lettered,
@@ -41,6 +45,8 @@ class FoundoraWorker(Worker):
             agent_failed,
             workflow_recovered,
             workflow_failed,
+            sandbox_recovered,
+            sandbox_failed,
             events_completed,
             events_retried,
             events_dead_lettered,
@@ -54,6 +60,15 @@ class FoundoraWorker(Worker):
             logging.getLogger(__name__).warning(
                 "Workflow run recovery reconciled durable state",
                 extra={"event": "workflow.run.recovered"},
+            )
+        if sandbox_recovered or sandbox_failed:
+            logging.getLogger(__name__).warning(
+                "Sandbox execution recovery reconciled durable state",
+                extra={
+                    "event": "sandbox.execution.recovered",
+                    "sandbox_recovered": sandbox_recovered,
+                    "sandbox_failed": sandbox_failed,
+                },
             )
         if events_completed or events_retried or events_dead_lettered:
             logging.getLogger(__name__).info(
@@ -79,6 +94,8 @@ def main() -> None:
         agent_failed,
         workflow_recovered,
         workflow_failed,
+        sandbox_recovered,
+        sandbox_failed,
         events_completed,
         events_retried,
         events_dead_lettered,
@@ -92,6 +109,15 @@ def main() -> None:
         logger.warning(
             "Workflow run recovery reconciled durable state",
             extra={"event": "workflow.run.recovered"},
+        )
+    if sandbox_recovered or sandbox_failed:
+        logger.warning(
+            "Sandbox execution recovery reconciled durable state",
+            extra={
+                "event": "sandbox.execution.recovered",
+                "sandbox_recovered": sandbox_recovered,
+                "sandbox_failed": sandbox_failed,
+            },
         )
     if events_completed or events_retried or events_dead_lettered:
         logger.info(

@@ -2,17 +2,17 @@
 
 These questions do not block Phase 00. They are intentionally routed to the phase in which the answer becomes necessary, avoiding premature decisions.
 
-| Decision needed | Needed by | Current safe default |
-|---|---:|---|
-| Which founder-owned business will be the first real launch? | Required for Phase 61 | Keep the business registry and onboarding generic; do not seed demo assumptions |
-| Which production deployment target should be selected? | Phase 59 | Continue with provider-independent Linux containers and environment-based configuration |
-| Which search provider is preferred and what research budget is acceptable? | Phase 16 | No external research claims until a provider/tool is configured |
-| Which object-storage provider should back production assets? | Phase 26 and Phase 59 | Phase 13 established the abstraction and explicitly local development volume; production remains unselected |
-| Which preview/deployment and DNS providers are preferred? | Phase 24/25 | Local build/preview only; never claim deployment or DNS state |
-| Which email, social, advertising, analytics, CRM, and messaging providers are in scope? | Relevant provider phases | Planning/drafts only until adapter, credentials, permission, policy, and tests exist |
-| What provider-specific monetary limits apply? | Relevant provider phases | Phase 11 defaults to zero spend and exposes owner-set daily/per-action caps; R4 still requires explicit approval |
-| What retention, backup, privacy, and jurisdictional requirements apply to real business/customer data? | Before Phase 33/production | Minimize data, store provenance, exclude secrets, and avoid ingesting regulated data without a policy |
-| Which production domain and subdomain conventions should be used? | Phase 25/59 | None selected |
+| Decision needed                                                                                        |                  Needed by | Current safe default                                                                                             |
+| ------------------------------------------------------------------------------------------------------ | -------------------------: | ---------------------------------------------------------------------------------------------------------------- |
+| Which founder-owned business will be the first real launch?                                            |      Required for Phase 61 | Keep the business registry and onboarding generic; do not seed demo assumptions                                  |
+| Which production deployment target should be selected?                                                 |                   Phase 59 | Continue with provider-independent Linux containers and environment-based configuration                          |
+| Which search provider is preferred and what research budget is acceptable?                             |                   Phase 16 | No external research claims until a provider/tool is configured                                                  |
+| Which object-storage provider should back production assets?                                           |      Phase 26 and Phase 59 | Phase 13 established the abstraction and explicitly local development volume; production remains unselected      |
+| Which preview/deployment and DNS providers are preferred?                                              |                Phase 24/25 | Local build/preview only; never claim deployment or DNS state                                                    |
+| Which email, social, advertising, analytics, CRM, and messaging providers are in scope?                |   Relevant provider phases | Planning/drafts only until adapter, credentials, permission, policy, and tests exist                             |
+| What provider-specific monetary limits apply?                                                          |   Relevant provider phases | Phase 11 defaults to zero spend and exposes owner-set daily/per-action caps; R4 still requires explicit approval |
+| What retention, backup, privacy, and jurisdictional requirements apply to real business/customer data? | Before Phase 33/production | Minimize data, store provenance, exclude secrets, and avoid ingesting regulated data without a policy            |
+| Which production domain and subdomain conventions should be used?                                      |                Phase 25/59 | None selected                                                                                                    |
 
 ## Resolved in Phase 01
 
@@ -28,7 +28,8 @@ These questions do not block Phase 00. They are intentionally routed to the phas
    Gemini locally; `gpt-4o-mini` is the tested OpenAI default, and Anthropic
    remains cleanly disabled until a key is supplied.
    Per-request defaults are 512 output tokens, 8,192 total tokens, and $0.10
-   estimated cost, with a hard 4,096 output-token ceiling. Later policy phases may
+   estimated cost. The hard output-token ceiling is now 24,000 so every immutable
+   seeded agent contract through Phase 21 is executable; later policy phases may
    add action/day/provider budgets without bypassing these gateway limits.
 9. Phase 06 derives business context on demand rather than persisting a duplicate
    snapshot. It reads only live workspace records, founder-approved onboarding

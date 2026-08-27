@@ -7,7 +7,7 @@ x-api-environment: &api-environment
   FOUNDORA_PUBLIC_ORIGIN: http://localhost:${WEB_PORT:-3000}
   FOUNDORA_MODEL_PRIMARY_PROVIDER: ${FOUNDORA_MODEL_PRIMARY_PROVIDER:-openai}
   FOUNDORA_MODEL_FALLBACK_PROVIDERS: ${FOUNDORA_MODEL_FALLBACK_PROVIDERS:-gemini,anthropic}
-  FOUNDORA_MODEL_TASK_ROUTES: '${FOUNDORA_MODEL_TASK_ROUTES:-{}}'
+  FOUNDORA_MODEL_TASK_ROUTES: "${FOUNDORA_MODEL_TASK_ROUTES:-{}}"
   FOUNDORA_MODEL_MAX_RETRIES: ${FOUNDORA_MODEL_MAX_RETRIES:-2}
   FOUNDORA_MODEL_TIMEOUT_SECONDS: ${FOUNDORA_MODEL_TIMEOUT_SECONDS:-30}
   FOUNDORA_MODEL_DEFAULT_MAX_OUTPUT_TOKENS: ${FOUNDORA_MODEL_DEFAULT_MAX_OUTPUT_TOKENS:-512}
@@ -105,9 +105,14 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      FOUNDORA_SANDBOX_RUNNER_URL: http://sandbox-runner:8080
+      FOUNDORA_SANDBOX_RUNNER_TOKEN: ${FOUNDORA_SANDBOX_RUNNER_TOKEN:-foundora-local-sandbox-runner-token-v1}
     command: ["python", "-m", "foundora.worker"]
     volumes:
       - knowledge_data:/var/lib/foundora/knowledge
+    networks:
+      - default
+      - sandbox-control
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -116,6 +121,46 @@ services:
     healthcheck:
       test: ["CMD", "python", "-m", "foundora.worker_health"]
       interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  sandbox-runtime:
+    image: foundora-sandbox-runtime:phase22
+    build:
+      context: ./apps/sandbox-runtime
+    entrypoint: ["/bin/true"]
+    network_mode: none
+    restart: "no"
+
+  sandbox-runner:
+    build:
+      context: .
+      dockerfile: apps/sandbox-runner/Dockerfile
+    environment:
+      FOUNDORA_SANDBOX_RUNNER_TOKEN: ${FOUNDORA_SANDBOX_RUNNER_TOKEN:-foundora-local-sandbox-runner-token-v1}
+      FOUNDORA_SANDBOX_RUNTIME_IMAGE: foundora-sandbox-runtime:phase22
+    group_add:
+      - "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - sandbox_runner_data:/var/lib/foundora-sandbox
+    networks:
+      - sandbox-control
+    depends_on:
+      sandbox-runtime:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16777216
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "src/healthcheck.mjs"]
+      interval: 5s
       timeout: 5s
       retries: 12
       start_period: 10s
@@ -171,3 +216,8 @@ volumes:
   postgres_data:
   redis_data:
   knowledge_data:
+  sandbox_runner_data:
+
+networks:
+  sandbox-control:
+    internal: true

@@ -459,6 +459,77 @@ export async function startWebsiteProject(formData: FormData): Promise<never> {
   redirect("/website-projects?updated=queued");
 }
 
+const sandboxMutationTimeoutMs = 15_000;
+
+function sandboxError(response: Response): string {
+  if (response.status === 401) return "session";
+  if (response.status === 403) return "denied";
+  if (response.status === 404) return "not-found";
+  if (response.status === 409) return "conflict";
+  if (response.status === 422) return "invalid";
+  if (response.status === 503) return "queue";
+  return "unavailable";
+}
+
+async function sandboxMutation(
+  path: string,
+  body: Record<string, unknown> | undefined,
+): Promise<Response> {
+  try {
+    return await authenticatedApiRequest(path, body, {
+      timeoutMs: sandboxMutationTimeoutMs,
+    });
+  } catch {
+    redirect("/sandbox?error=unavailable");
+  }
+}
+
+export async function requestSandboxExecution(): Promise<never> {
+  const response = await sandboxMutation("/sandbox/executions", {
+    idempotency_key: `ui:sandbox:${crypto.randomUUID()}`,
+  });
+  if (!response.ok) redirect(`/sandbox?error=${sandboxError(response)}`);
+  const value: unknown = await response.json();
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as { id?: unknown }).id !== "string"
+  ) {
+    redirect("/sandbox?error=unavailable");
+  }
+  redirect(
+    `/sandbox?execution=${encodeURIComponent((value as { id: string }).id)}&updated=requested`,
+  );
+}
+
+export async function startSandboxExecution(
+  executionId: string,
+): Promise<never> {
+  const encoded = encodeURIComponent(executionId);
+  const response = await sandboxMutation(
+    `/sandbox/executions/${encoded}/start`,
+    undefined,
+  );
+  if (!response.ok) {
+    redirect(`/sandbox?execution=${encoded}&error=${sandboxError(response)}`);
+  }
+  redirect(`/sandbox?execution=${encoded}&updated=queued`);
+}
+
+export async function cancelSandboxExecution(
+  executionId: string,
+): Promise<never> {
+  const encoded = encodeURIComponent(executionId);
+  const response = await sandboxMutation(
+    `/sandbox/executions/${encoded}/cancel`,
+    undefined,
+  );
+  if (!response.ok) {
+    redirect(`/sandbox?execution=${encoded}&error=${sandboxError(response)}`);
+  }
+  redirect(`/sandbox?execution=${encoded}&updated=cancelled`);
+}
+
 function taskError(response: Response): string {
   if (response.status === 404) return "not-found";
   if (response.status === 409) return "conflict";

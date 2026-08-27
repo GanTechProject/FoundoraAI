@@ -600,6 +600,7 @@ class GovernanceService:
         action_id: uuid.UUID,
         idempotency_key: str,
         owner_id: uuid.UUID | None,
+        force_recheck: bool = False,
     ) -> ActionRecord:
         action = await database.scalar(
             select(GovernanceAction)
@@ -614,9 +615,10 @@ class GovernanceService:
         approval = await database.scalar(
             select(ApprovalRequest).where(ApprovalRequest.action_id == action.id)
         )
-        if action.status == "authorized":
+        was_authorized = action.status == "authorized"
+        if was_authorized and not force_recheck:
             return ActionRecord(action, approval)
-        if action.status != "approved":
+        if action.status not in {"approved", "authorized"}:
             await _add_audit(
                 database,
                 "execution_denied",
@@ -630,6 +632,9 @@ class GovernanceService:
             return ActionRecord(action, approval)
         _, current_policy_version = await self._policy(database)
         if action.policy_version_id != current_policy_version.id:
+            if was_authorized:
+                action.status = "blocked"
+                action.authorized_at = None
             action.rationale = "The active policy version changed; re-evaluation is required"
             action.updated_at = _now()
             await _add_audit(
@@ -661,6 +666,9 @@ class GovernanceService:
             force_approval=False,
         )
         if blocked_status in {"blocked", "denied"}:
+            if was_authorized:
+                action.status = blocked_status
+                action.authorized_at = None
             action.rationale = rationale
             action.updated_at = _now()
             await _add_audit(

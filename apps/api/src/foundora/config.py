@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     knowledge_storage_path: str = "/var/lib/foundora/knowledge"
     knowledge_max_upload_bytes: int = 5_242_880
     knowledge_max_extracted_characters: int = 1_000_000
+    sandbox_runner_url: str = "http://localhost:8080"
+    sandbox_runner_token: SecretStr | None = None
     openai_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("FOUNDORA_OPENAI_API_KEY", "OPENAI_API_KEY"),
@@ -75,6 +77,21 @@ class Settings(BaseSettings):
         if "/" in normalized.split("://", 1)[1]:
             raise ValueError("FOUNDORA_PUBLIC_ORIGIN must not include a path")
         return normalized
+
+    @field_validator("sandbox_runner_url")
+    @classmethod
+    def validate_sandbox_runner_url(cls, value: str) -> str:
+        normalized = value.rstrip("/")
+        if not normalized.startswith("http://") or "/" in normalized.split("://", 1)[1]:
+            raise ValueError("FOUNDORA_SANDBOX_RUNNER_URL must be an HTTP origin without a path")
+        return normalized
+
+    @field_validator("sandbox_runner_token")
+    @classmethod
+    def validate_sandbox_runner_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and len(value.get_secret_value()) < 32:
+            raise ValueError("FOUNDORA_SANDBOX_RUNNER_TOKEN must contain at least 32 characters")
+        return value
 
     @field_validator(
         "session_idle_minutes",
